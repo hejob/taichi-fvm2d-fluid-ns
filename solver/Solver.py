@@ -103,6 +103,7 @@ class Solver:
         self.display_show_grid = False
         self.display_show_xc = False
         self.display_show_velocity = False
+        self.display_show_velocity_skip = (1, 1)
         self.display_show_surface = False
         self.display_show_surface_norm = False
 
@@ -300,11 +301,12 @@ class Solver:
     ########################
     # Set extra display
     def set_display_options(self, display_show_grid, display_show_xc,
-                            display_show_velocity, display_show_surface,
-                            display_show_surface_norm):
+                            display_show_velocity, display_show_velocity_skip,
+                            display_show_surface, display_show_surface_norm):
         self.display_show_grid = display_show_grid
         self.display_show_xc = display_show_xc
         self.display_show_velocity = display_show_velocity
+        self.display_show_velocity_skip = display_show_velocity_skip
         self.display_show_surface = display_show_surface
         self.display_show_surface_norm = display_show_surface_norm
 
@@ -617,7 +619,8 @@ class Solver:
                 ## TEMP: velocity points to normal side
                 v = ti.Vector([q1, q2]).normalized()
                 v_bc = v.dot(v) * v
-                self.q[bc_I] = ti.Vector([q0, v_bc[0], v_bc[1], q3])
+                q_bc = ti.Vector([q0, v_bc[0], v_bc[1], q3])
+                self.q[bc_I] = q_bc
             elif stage == 1:
                 if ti.static(self.is_viscous):
                     self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
@@ -1347,15 +1350,15 @@ class Solver:
         p1 = self.scale_to_screen(self.line_arrow(xc, uv, 0.02))
         su1 = self.util_rotate_vector(uv, 140)
         su2 = self.util_rotate_vector(uv, -140)
-        p2 = self.line_arrow(p1, su1, 0.02 * 0.5)
-        p3 = self.line_arrow(p1, su2, 0.02 * 0.5)
-        self.gui.line(p0, p1, radius=1, color=0xccaaaa)
-        self.gui.line(p1, p2, radius=1, color=0xccaaaa)
-        self.gui.line(p1, p3, radius=1, color=0xccaaaa)
+        p2 = self.line_arrow(p1, su1, 0.02 * 0.3)
+        p3 = self.line_arrow(p1, su2, 0.02 * 0.3)
+        self.gui.line(p0, p1, radius=1, color=0x669922)
+        self.gui.line(p1, p2, radius=1, color=0x669922)
+        self.gui.line(p1, p3, radius=1, color=0x669922)
 
     def display_v(self):
-        for i in range(1, self.ni + 1):
-            for j in range(1, self.nj + 1):
+        for i in range(1, self.ni + 1, self.display_show_velocity_skip[0]):
+            for j in range(1, self.nj + 1, self.display_show_velocity_skip[1]):
                 # elem v
                 u = self.q[i, j][1] / self.q[i, j][0]
                 v = self.q[i, j][2] / self.q[i, j][0]

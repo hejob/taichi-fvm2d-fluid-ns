@@ -13,9 +13,9 @@ import time
 real = ti.f32
 # ti.init(arch=ti.cpu, default_fp=real, kernel_profiler=True)
 
-width = 1.0
+width = 2.0
 height = 0.4
-ni = 60
+ni = 200
 nj = 40
 
 @ti.kernel
@@ -59,10 +59,10 @@ if __name__ == '__main__':
         display_field=True,
         display_value_min=0.0,
         display_value_max=2.0,
-        display_scale=20,
+        display_scale=10,
         output_line=True,
-        output_line_ends=((0.3, 0.02), (0.3, 0.38)),
-        output_line_num_points=100,
+        output_line_ends=((1.4, 0.02), (1.4, 0.38)),
+        output_line_num_points=40,
         output_line_var=1,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
         output_line_plot_var=1)  # output along x-axis on plot
 
@@ -92,7 +92,8 @@ if __name__ == '__main__':
             display_show_grid=False,
             display_show_xc=False,
             display_show_velocity=True,
-            display_show_surface=True,
+            display_show_velocity_skip=(4, 2),
+            display_show_surface=False,
             display_show_surface_norm=False
         )
 

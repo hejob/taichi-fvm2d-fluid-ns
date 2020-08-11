@@ -92,7 +92,8 @@ if __name__ == '__main__':
     solver.set_display_options(
             display_show_grid=False,
             display_show_xc=False,
-            display_show_velocity=False,
+            display_show_velocity=True,
+            display_show_velocity_skip=(16,8),
             display_show_surface=False,
             display_show_surface_norm=False
         )
