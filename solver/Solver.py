@@ -52,10 +52,10 @@ class Solver:
             temp0_raw=273,
             re0=1e5,
             # output: realtime field display
+            gui_size=(400, 400),
             display_field=True,
             display_value_min=0.0,
             display_value_max=1.0,
-            display_scale=5,
             output_line=False,
             output_line_ends=((), ()),
             output_line_num_points=200,
@@ -95,11 +95,12 @@ class Solver:
 
         ## realtime outputs
         ##  display simulation field
+        self.gui_size = gui_size
         self.display_field = display_field
         self.display_value_min = display_value_min
         self.display_value_max = display_value_max
-        self.display_scale = display_scale
         ## switches, can be set later
+        self.display_steps = 20
         self.display_show_grid = False
         self.display_show_xc = False
         self.display_show_velocity = False
@@ -129,6 +130,15 @@ class Solver:
         ##          value item in bc_q_values array
         self.bc_info = []
         self.bc_q_values = []
+        ## bc_connection_info stores boundaries that is interconnected
+        ##      ((bc_def), (bc_other_side_def), number of cells)
+        ##      with bc_def:
+        ##              (start, march_plus_or_minus_direction(1/-1), 
+        ##                 surface direction (0/1, i or j), surface start or end(0/1, surf i0/j0 or iend/jend))
+        ##      sample: ((1, +1, 0, 0), (1, +1, 0, 1), nj)
+        ##              means a boundary on i-surf-start side, from (1, 1) to (1, nj + 1), goes in j+ direction
+        ##              connects to a boundary on i-surf-end side, from (ni, 1) to (ni, nj + 1), goes in j+ direction
+        self.bc_connection_info = []
 
     ###############################
     # Taichi tensors allocations
@@ -299,10 +309,21 @@ class Solver:
         self.bc_q_values = bc_q_values[:]
 
     ########################
+    # Call this before solve to set boundary connections
+    # We use array clone here
+    def set_bc_connection(self, connections):
+        self.bc_connection_info = connections[:]
+
+    ########################
     # Set extra display
-    def set_display_options(self, display_show_grid, display_show_xc,
-                            display_show_velocity, display_show_velocity_skip,
-                            display_show_surface, display_show_surface_norm):
+    def set_display_options(self, display_steps=20,
+                            display_show_grid=False,
+                            display_show_xc=False,
+                            display_show_velocity=False,
+                            display_show_velocity_skip=(4, 4),
+                            display_show_surface=False,
+                            display_show_surface_norm=False):
+        self.display_steps = display_steps
         self.display_show_grid = display_show_grid
         self.display_show_xc = display_show_xc
         self.display_show_velocity = display_show_velocity
@@ -626,6 +647,54 @@ class Solver:
                     self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
                     self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
 
+    @ti.func
+    def calc_bc_connection_positions(self, conn_info: ti.template()) -> ti.template():
+        ## conn_info: (start index, march direction, surface direction, surface index (start/end))
+        pos_start = ti.Vector([0, 0])
+        direction_offset = ti.Vector([0, 0])   # bc marches in this direction from start elem
+        bc_offset = ti.Vector([0, 0])          # virtual voxels indexes are pos + bc_offset for every bc cell
+
+        index_start = conn_info[0]
+        direction = conn_info[1]
+        surf_ij = conn_info[2]
+        surf_0n = conn_info[3]
+
+        if (surf_ij == 0):     # i-surf
+            direction_offset = ti.Vector([0, direction])
+            if (surf_0n == 0): # i-0-surf
+                pos_start = ti.Vector([1, index_start])
+                bc_offset = ti.Vector([-1, 0])
+            else:                   # i-n-surf
+                pos_start = ti.Vector([self.ni, index_start])
+                bc_offset = ti.Vector([1, 0])
+        else:                       # j-surf
+            direction_offset = ti.Vector([direction, 0])
+            if (surf_0n == 0): # j-0-surf
+                pos_start = ti.Vector([index_start, 1])
+                bc_offset = ti.Vector([0, -1])
+            else:                   # j-n-surf
+                pos_start = ti.Vector([index_start, self.nj])
+                bc_offset = ti.Vector([0, 1])
+
+        return (pos_start, direction_offset, bc_offset)
+
+    @ti.kernel
+    def bc_connection(self, bc_conn: ti.template(), bc_other: ti.template(), num: ti.i32, stage: ti.i32):
+        conn_pos_start, conn_direction_offset, conn_offset = self.calc_bc_connection_positions(bc_conn)
+        other_pos_start, other_direction_offset, other_offset = self.calc_bc_connection_positions(bc_other)
+        for i in range(num):
+            bc_I = conn_pos_start + i * conn_direction_offset + conn_offset  # bc on this side
+            I_other = other_pos_start + i * other_direction_offset          # real cell on other side
+
+            if stage == -1:
+                self.elem_area[bc_I] = self.elem_area[I_other]
+                self.elem_width[bc_I] = self.elem_width[I_other]
+            elif stage == 0:
+                self.q[bc_I] = self.q[I_other]
+            elif stage == 1:
+                if ti.static(self.is_viscous):
+                    self.gradient_v_c[bc_I] = self.gradient_v_c[I_other]
+                    self.gradient_temp_c[bc_I] = self.gradient_temp_c[I_other]
 
     ###############
     ## Calls all bondary conditions from here
@@ -637,6 +706,7 @@ class Solver:
     ##    0: q on center
     ##    1: gradient uvt on center
     def bc(self, stage):
+        # local bc
         for bc in self.bc_info:
             (bc_type, rng0, rng1, direction, start_or_end, q_index) = bc
             if bc_type == 0:
@@ -673,6 +743,11 @@ class Solver:
                                     q_bc_item[3], stage)
             else:
                 raise ValueError("unknown bc type")
+
+        # connection transfers
+        for (bc_conn, bc_other, num) in self.bc_connection_info:
+            self.bc_connection(bc_conn, bc_other, num, stage)
+
 
     #--------------------------------------------------------------------------
     #  Utility Functions
@@ -1582,27 +1657,27 @@ class Solver:
 
     def run(self):
         self.gui = ti.GUI("2D FVM Supersonic",
-                          res=(self.ni * self.display_scale,
-                               self.nj * self.display_scale),
+                          res=self.gui_size,
                           background_color=0x4f9297)
 
         self.init()
 
         ## init for field display
-        # self.display_elem_q_raw_writeelems()
-        self.display_elem_q_writeelems()
+        if self.display_field:
+            # self.display_elem_q_raw_writeelems()
+            self.display_elem_q_writeelems()
 
         ## init for output line
-        all_points_ok = self.display_output_line_init()
-        if not all_points_ok:
-            print("Found some output point not in region, stops.")
-            # # print(dd[None])
-            exit(0)
-
-        # init plot
-        plt.ion()
-        self.plot_fig = plt.figure()
-        plt.axis([0, 1.0, 0, 3.0])
+        if self.output_line:
+            all_points_ok = self.display_output_line_init()
+            if not all_points_ok:
+                print("Found some output point not in region, stops.")
+                # # print(dd[None])
+                exit(0)
+            # init plot
+            plt.ion()
+            self.plot_fig = plt.figure()
+            plt.axis([0, 1.0, 0, 3.0])
 
         pause = False
         while self.gui.running:
@@ -1615,15 +1690,18 @@ class Solver:
             if pause:
                 ## TODO: this will cause problems?
                 # # time.sleep(1)
-                self.display()
+                if self.display_field:
+                    self.display()
                 continue
 
             ## simulation step
-            for step in range(20):
+            for step in range(self.display_steps):
                 self.step()
                 self.t += self.dt
 
             ## TODO: more useful information to console
             print(f't: {self.t:.03f}')
-            self.display()
-            self.display_output_line()
+            if self.display_field:
+                self.display()
+            if self.output_line:
+                self.display_output_line()

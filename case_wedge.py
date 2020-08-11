@@ -22,7 +22,7 @@ nj = 200
 def generate_wedge_grids(
         x: ti.template(), i0: ti.i32, i1: ti.i32, j0: ti.i32, j1: ti.i32):
     ## EXAMPLE: supersonic wedge
-    ## NOTICE: virtual voxels are also generated here
+    ## NOTICE: virtual voxels are not generated here
     ## TODO: generate bc by program?
     dx = width / ni
     dy = height / nj
@@ -58,10 +58,10 @@ if __name__ == '__main__':
         is_viscous=True,
         temp0_raw=273,
         re0=re0,
+        gui_size=(400, 320),
         display_field=True,
         display_value_min=0.0,
         display_value_max=3.0,
-        display_scale=2,
         output_line=True,
         output_line_ends=((0.1, 0.4), (0.9, 0.4)),
         output_line_num_points=200,
