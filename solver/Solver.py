@@ -84,6 +84,7 @@ class Solver:
         self.t = 0.0
 
         ## viscous Navier-Stokes simulation properties
+        self.is_convect_calculated = True  # a switch to skip convect flux only for debug
         self.is_viscous = is_viscous
         if self.is_viscous:
             self.temp0_raw = temp0_raw
@@ -95,9 +96,16 @@ class Solver:
         ## realtime outputs
         ##  display simulation field
         self.display_field = display_field
-        self.display_value_min = display_value_min # 2.0 
-        self.display_value_max = display_value_max # 3.0
-        self.display_scale = display_scale #5
+        self.display_value_min = display_value_min
+        self.display_value_max = display_value_max
+        self.display_scale = display_scale
+        ## switches, can be set later
+        self.display_show_grid = False
+        self.display_show_xc = False
+        self.display_show_velocity = False
+        self.display_show_surface = False
+        self.display_show_surface_norm = False
+
         ##  plots one quantity along one line
         self.output_line = output_line
         self.output_line_ends = output_line_ends
@@ -120,7 +128,6 @@ class Solver:
         ##          value item in bc_q_values array
         self.bc_info = []
         self.bc_q_values = []
-
 
     ###############################
     # Taichi tensors allocations
@@ -290,6 +297,16 @@ class Solver:
         self.bc_info = bc[:]
         self.bc_q_values = bc_q_values[:]
 
+    ########################
+    # Set extra display
+    def set_display_options(self, display_show_grid, display_show_xc,
+                            display_show_velocity, display_show_surface,
+                            display_show_surface_norm):
+        self.display_show_grid = display_show_grid
+        self.display_show_xc = display_show_xc
+        self.display_show_velocity = display_show_velocity
+        self.display_show_surface = display_show_surface
+        self.display_show_surface_norm = display_show_surface_norm
 
     #--------------------------------------------------------------------------
     #  Preparations before main simulation loop
@@ -326,7 +343,6 @@ class Solver:
             # rotate vec_diff by 90 degrees
             # NOTICE: we assume S > 0, we do not deal with degenerated grid for now
             self.vec_surf[I, 1] = ti.Vector([-vec_diff[1], vec_diff[0]])
-
 
     #####################
     ## geom elem size in i/j, useful for interpolation on surface
@@ -380,7 +396,6 @@ class Solver:
 
         self.init_q()
 
-
     #--------------------------------------------------------------------------
     #  Boundary Conditions (BC)
     #
@@ -417,8 +432,8 @@ class Solver:
 
     @ti.kernel
     def bc_inlet_super(self, rng_x: ti.template(), rng_y: ti.template(),
-                       dir: ti.template(), end: ti.template(),
-                       q0: real, q1: real, q2: real, q3: real, stage: ti.i32):
+                       dir: ti.template(), end: ti.template(), q0: real,
+                       q1: real, q2: real, q3: real, stage: ti.i32):
         rng = ti.Vector([rng_x, rng_y])
         range_bc_x, range_bc_y, offset = self.calc_bc_range(rng, dir, end)
         for I in ti.grouped(
@@ -561,6 +576,54 @@ class Solver:
                     self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
                     self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
 
+    @ti.kernel
+    def bc_inlet_subsonic(self, rng_x: ti.template(), rng_y: ti.template(),
+                       dir: ti.template(), end: ti.template(), q0: real,
+                       q1: real, q2: real, q3: real, stage: ti.i32):
+        rng = ti.Vector([rng_x, rng_y])
+        range_bc_x, range_bc_y, offset = self.calc_bc_range(rng, dir, end)
+        for I in ti.grouped(
+                ti.ndrange((range_bc_x[0], range_bc_x[1]),
+                           (range_bc_y[0], range_bc_y[1]))):
+            bc_I = I + offset
+            # far end inlet
+            if stage == -1:
+                self.elem_area[bc_I] = self.elem_area[I]
+                self.elem_width[bc_I] = self.elem_width[I]
+            elif stage == 0:
+                self.q[bc_I] = ti.Vector([q0, q1, q2, q3])
+            elif stage == 1:
+                if ti.static(self.is_viscous):
+                    self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
+
+
+    @ti.kernel
+    def bc_outlet_subsonic(self, rng_x: ti.template(), rng_y: ti.template(),
+                       dir: ti.template(), end: ti.template(), q0: real,
+                       q1: real, q2: real, q3: real, stage: ti.i32):
+        rng = ti.Vector([rng_x, rng_y])
+        range_bc_x, range_bc_y, offset = self.calc_bc_range(rng, dir, end)
+        for I in ti.grouped(
+                ti.ndrange((range_bc_x[0], range_bc_x[1]),
+                           (range_bc_y[0], range_bc_y[1]))):
+            bc_I = I + offset
+            # far end inlet
+            if stage == -1:
+                self.elem_area[bc_I] = self.elem_area[I]
+                self.elem_width[bc_I] = self.elem_width[I]
+            elif stage == 0:
+                # self.q[bc_I] = ti.Vector([q0, q1, q2, q3])
+                ## TEMP: velocity points to normal side
+                v = ti.Vector([q1, q2]).normalized()
+                v_bc = v.dot(v) * v
+                self.q[bc_I] = ti.Vector([q0, v_bc[0], v_bc[1], q3])
+            elif stage == 1:
+                if ti.static(self.is_viscous):
+                    self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
+
+
     ###############
     ## Calls all bondary conditions from here
     ##
@@ -579,8 +642,8 @@ class Solver:
                 ## TODO: transfer q_bc directly slows down drastically?
                 # q_bc = ti.Vector([q_bc_item[0], q_bc_item[1], q_bc_item[2], q_bc_item[3]])
                 self.bc_inlet_super(rng0, rng1, direction, start_or_end,
-                            q_bc_item[0], q_bc_item[1], q_bc_item[2], q_bc_item[3],
-                            stage)
+                                    q_bc_item[0], q_bc_item[1], q_bc_item[2],
+                                    q_bc_item[3], stage)
             elif bc_type == 1:
                 ## super outlet
                 self.bc_outlet_super(rng0, rng1, direction, start_or_end, stage)
@@ -593,7 +656,20 @@ class Solver:
             elif bc_type == 4:
                 ## slip wall
                 self.bc_wall_slip(rng0, rng1, direction, start_or_end, stage)
-
+            elif bc_type == 10:
+                ## subsonic inlet
+                q_bc_item = self.bc_q_values[q_index]
+                self.bc_inlet_subsonic(rng0, rng1, direction, start_or_end,
+                                    q_bc_item[0], q_bc_item[1], q_bc_item[2],
+                                    q_bc_item[3], stage)
+            elif bc_type == 11:
+                ## subsonic outlet
+                q_bc_item = self.bc_q_values[q_index]
+                self.bc_outlet_subsonic(rng0, rng1, direction, start_or_end,
+                                    q_bc_item[0], q_bc_item[1], q_bc_item[2],
+                                    q_bc_item[3], stage)
+            else:
+                raise ValueError("unknown bc type")
 
     #--------------------------------------------------------------------------
     #  Utility Functions
@@ -774,9 +850,8 @@ class Solver:
 
         # TODO: calculate ql, qr used on surface from left/right
         # now we use first-order approximation directly from left/right cell center
-        self.flux_van_leer()
-
-
+        if self.is_convect_calculated:
+            self.flux_van_leer()
 
     #--------------------------------------------------------------------------
     #  Interpolations for gradients on surface/center
@@ -822,7 +897,6 @@ class Solver:
     @ti.kernel
     def interpolate_temp_surf(self):
         self.interpolate_center_to_surf(self.temp_c, self.temp_surf)
-
 
     @ti.func
     def integrate_calc_gradient_center_scalar(self, w_surf: ti.template(),
@@ -893,7 +967,6 @@ class Solver:
     def interpolate_gradient_temp_surf(self):
         self.interpolate_center_to_surf(self.gradient_temp_c,
                                         self.gradient_temp_surf)
-
 
     #--------------------------------------------------------------------------
     #  Diffusion Fluxes for viscous flow
@@ -972,11 +1045,10 @@ class Solver:
 
         self.calc_flux_diffusion()
 
-
     #--------------------------------------------------------------------------
     #  Time marching methods
     #
-    #  Explicit 
+    #  Explicit
     #  Runge-Kutta 3rd
     #--------------------------------------------------------------------------
 
@@ -1049,7 +1121,6 @@ class Solver:
             #         self.vec_surf[I_surf[0], I_surf[1], 0][1])
             self.time_march_rk3(i)
 
-
     #--------------------------------------------------------------------------
     #  Display field
     #--------------------------------------------------------------------------
@@ -1064,7 +1135,12 @@ class Solver:
             py = ti.min(
                 self.nj,
                 ti.max(0, ti.cast(pos[1] / self.height * self.nj, ti.i32)))
-            self.display_img[px, py] = self.q[I][1] / self.q[I][0] / 2.0
+            # sample: u
+            # self.display_img[px, py] = self.q[I][1] / self.q[I][0] / 2.0
+            value = self.util_output_line_getvalue(I)
+            value = (value - self.display_value_min) / (self.display_value_max - self.display_value_min)
+            value = ti.max(0.0, ti.min(1.0, value))
+            self.display_img[px, py] = value
 
     def scale_to_screen(self, p):
         return (p[0] / self.width, p[1] / self.height)
@@ -1114,7 +1190,7 @@ class Solver:
         return (v[0], v[1])
 
     def scale_value_to_color(self, c, min_value=0.0, max_value=1.0):
-        v = (c - min_value) / (max_value - min_value)        
+        v = (c - min_value) / (max_value - min_value)
         # map [0,1] ~ gray color 0~255
         color_gray = (v * 256.0) // 1
         color_gray = min(255, max(0, color_gray))
@@ -1230,29 +1306,23 @@ class Solver:
         return ma
 
     @ti.kernel
-    def display_elem_q_writeq(self, q_index: ti.template()):
+    def display_elem_q_writeq(self):
         index = 0
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
             index = 2 * ((I[0] - 1) * self.nj + (I[1] - 1))
             index2 = index + 1
-            value = 0.0
-            if ti.static(q_index == -1):
-                # Ma
-                value = self.util_calc_ma_from_q(self.q[I])
-            else:
-                value = self.q[I][ti.static(q_index)]
+            value = self.util_output_line_getvalue(I)
             self.display_elems_q[index] = self.util_ti_scale_value_to_color(
                 value)
             self.display_elems_q[index2] = self.util_ti_scale_value_to_color(
                 value)
 
-    def display_elem_q(self, q_index):
-        self.display_elem_q_writeq(q_index)
+    def display_elem_q(self):
+        self.display_elem_q_writeq()
         self.gui.triangles(self.display_elems_triangle_a.to_numpy(),
                            self.display_elems_triangle_b.to_numpy(),
                            self.display_elems_triangle_c.to_numpy(),
                            color=self.display_elems_q.to_numpy())
-        # self.gui.triangles(self.display_elems_triangle_a.to_numpy(), self.display_elems_triangle_b.to_numpy(), self.display_elems_triangle_c.to_numpy())
 
     def display_xc(self):
         np_xc = self.xc.to_numpy()[1:1 + self.ni, 1:1 + self.nj]
@@ -1293,24 +1363,27 @@ class Solver:
                 self.display_draw_arrow(xc, (u, v), 0.01)
 
     def display(self):
-        ###
+        ### These are slow, to be removed
         # self.display_img.fill(0.0)
         # self.display_setimage()
         # self.gui.set_image(self.display_img)
-
         ## self.display_elem_q_raw(3)
-        self.display_elem_q(-1)  # should be at the bottom
+
+        ## field should be displayed at the bottom, draw grids/arrows later
+        if self.display_field:
+            self.display_elem_q()
 
         ## grid and center, velocity arrows
-        # self.display_grid()
-        # self.display_xc()
-        # self.display_v()
-        # self.display_surf_norm(False)
+        if self.display_show_grid:
+            self.display_grid()
+        if self.display_show_xc:
+            self.display_xc()
+        if self.display_show_velocity:
+            self.display_v()
+        if self.display_show_surface:
+            self.display_surf_norm(self.display_show_surface_norm)
 
         self.gui.show()
-
-
-
 
     #--------------------------------------------------------------------------
     #  Plot values on a line
@@ -1318,7 +1391,6 @@ class Solver:
     #  Needs to interpolate field to get values on the points
     #  Caches interpolation coefficients before main loop
     #--------------------------------------------------------------------------
-
 
     @ti.func
     def util_value_is_positive(self, v) -> ti.i32:
@@ -1350,7 +1422,6 @@ class Solver:
         ])
         b = ti.Vector([1.0, p[0], p[1]])
         return A.inverse() @ b
-
 
     @ti.kernel
     def display_output_line_init(self) -> ti.i32:
@@ -1502,15 +1573,14 @@ class Solver:
         plt.show()
         plt.pause(0.001)
 
-
-
     #--------------------------------------------------------------------------
     #  Main loop
     #--------------------------------------------------------------------------
 
     def run(self):
         self.gui = ti.GUI("2D FVM Supersonic",
-                          res=(self.ni * self.display_scale, self.nj * self.display_scale),
+                          res=(self.ni * self.display_scale,
+                               self.nj * self.display_scale),
                           background_color=0x4f9297)
 
         self.init()

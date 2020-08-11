@@ -14,12 +14,12 @@ real = ti.f32
 # ti.init(arch=ti.cpu, default_fp=real, kernel_profiler=True)
 
 width = 1.0
-height = 0.8
-ni = 400
-nj = 200
+height = 0.4
+ni = 60
+nj = 40
 
 @ti.kernel
-def generate_wedge_grids(
+def generate_grids(
         x: ti.template(), i0: ti.i32, i1: ti.i32, j0: ti.i32, j1: ti.i32):
     ## EXAMPLE: supersonic wedge
     ## NOTICE: virtual voxels are also generated here
@@ -31,9 +31,6 @@ def generate_wedge_grids(
         ty = dy * I[1]
         px = tx
         py = ty
-        if (px > 0.2 * width):
-            s = (1.0 * I[0] / ni) - 0.2
-            py = 0.2 * s + (ty / 0.8) * (0.8 - 0.2 * s)
         x[I] = ti.Vector([px, py])
 
 ##################
@@ -43,8 +40,9 @@ if __name__ == '__main__':
 
     ### initialize solver with simulation settings
     gamma = 1.4
-    ma0 = 2.4
-    re0 = 1.225 * (ma0 * 343) * 1.0 / (1.81e-5)
+    ma0 = 0.3
+    # re0 = 1.225 * (ma0 * 343) * 1.0 / (1.81e-5)
+    re0 = 1e+4
     p0 = 1.0 / gamma / ma0 / ma0
     e0 = p0 / (gamma - 1.0) + 0.5 * 1.0
 
@@ -60,17 +58,17 @@ if __name__ == '__main__':
         re0=re0,
         display_field=True,
         display_value_min=0.0,
-        display_value_max=3.0,
-        display_scale=2,
+        display_value_max=2.0,
+        display_scale=20,
         output_line=True,
-        output_line_ends=((0.1, 0.4), (0.9, 0.4)),
-        output_line_num_points=200,
-        output_line_var=7,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
-        output_line_plot_var=0)  # output along x-axis on plot
+        output_line_ends=((0.3, 0.02), (0.3, 0.38)),
+        output_line_num_points=100,
+        output_line_var=1,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
+        output_line_plot_var=1)  # output along x-axis on plot
 
     ### generate grids in Solver's x tensor
     (i_range, j_range) = solver.range_grid
-    generate_wedge_grids(solver.x, i_range[0], i_range[1], j_range[0], j_range[1])
+    generate_grids(solver.x, i_range[0], i_range[1], j_range[0], j_range[1])
 
     ### boundary conditions
     ###     0/1/2/3/4: inlet(super)/outlet(super)/symmetry/wall(noslip)/wall(slip)
@@ -81,21 +79,23 @@ if __name__ == '__main__':
     ]
 
     bc_array = [
-        (0, 1, nj + 1, 0, 0, 0),        # left super inlet
-        (1, 1, nj + 1, 0, 1, None),     # right, super outlet
-        (2, 1, i_bc, 1, 0, None),       # down, symmetry before wedge
-        (3, i_bc, ni + 1, 1, 0, None),  # down, wall wedge
-        (1, 1, ni + 1, 1, 1, None),     # top, super outlet (right?)
+        (10, 1, nj + 1, 0, 0, 0),         # left subsonic inlet
+        (11, 1, nj + 1, 0, 1, 0),         # right, subsonic outlet
+        (3, 1, ni + 1, 1, 0, None),       # down, wall
+        (3, 1, ni + 1, 1, 1, None),       # up, wall
+        # (2, 1, ni + 1, 1, 0, None),     # down, sym
+        # (2, 1, ni + 1, 1, 1, None),     # up, sym
     ]
     solver.set_bc(bc_array, bc_q_values)
 
     solver.set_display_options(
             display_show_grid=False,
             display_show_xc=False,
-            display_show_velocity=False,
-            display_show_surface=False,
+            display_show_velocity=True,
+            display_show_surface=True,
             display_show_surface_norm=False
         )
+
     ### start simulation loop
     t = time.time()
     solver.run()
