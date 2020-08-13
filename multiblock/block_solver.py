@@ -308,9 +308,15 @@ class BlockSolver:
         ## internal elems only
         ## virtual elems should be initilized by bc (except 4 corner elems, not used)
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
+            # self.q[I] = ti.Vector([
+            #     1.0,
+            #     1.0 * 1.0,
+            #     1.0 * 0.0,
+            #     1.0 * self.e0,
+            # ])
             self.q[I] = ti.Vector([
                 1.0,
-                1.0 * 1.0,
+                1.0 * 0.0,
                 1.0 * 0.0,
                 1.0 * self.e0,
             ])

@@ -65,7 +65,7 @@ class Drawer:
         self.output_line_var = output_line_var  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
         self.output_line_plot_var = output_line_plot_var  # output x on plot
 
-        self.output_line_label = ('Rho', 'u', 'v', 'et', 'unorm', 'p', 'a', 'Ma')[self.output_line_plot_var]
+        self.output_line_label = ('Rho', 'u', 'v', 'et', 'unorm', 'p', 'a', 'Ma')[self.output_line_var]
 
         ## taichi vars
         self.init_allocations()
