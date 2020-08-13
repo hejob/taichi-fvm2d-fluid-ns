@@ -24,7 +24,7 @@ e0 = p0 / (gamma - 1.0) + 0.5 * 1.0
 
 ## sizes
 # ni_h = 16           # dh = 0.2 / ni_h, step height
-ni_h = 16
+ni_h = 24
 dh = 0.2 / ni_h
 
 width = 3.0
@@ -64,9 +64,10 @@ solver = MultiBlockSolver(
     n_blocks=2,
     block_dimensions=[(ni_step, nj_step), (ni_main, nj_main)],
     ma0=ma0,
-    dt=1e-5,
-    convect_method=0,
-    is_viscous=True,
+    dt=1e-6,
+    is_dual_time=True,
+    convect_method=1,
+    is_viscous=False,
     temp0_raw=273,
     re0=1e5, # dummy
     gui_size=(600, 200),
@@ -98,7 +99,10 @@ bc_array_step = [
     ## move to bc connection
     (0, 1, nj_step + 1, 0, 0, 0),        # left inlet
     (3, 1, nj_step + 1, 0, 1, None),     # right wall
+    
+
     (3, 1, ni_step + 1, 1, 0, None),     # down wall
+    # (2, 1, ni_step + 1, 1, 0, None),     # down sym?
 
     # (3, 1, ni_step + 1, 1, 1, None),     # up wall -> connect
 ]
@@ -125,7 +129,7 @@ bc_connection_array = [
 solver.set_bc_connection(bc_connection_array)
 
 solver.set_display_options(
-        display_steps=50,
+        display_steps=100,
         display_show_grid=False,
         display_show_xc=False,
         display_show_velocity=False,

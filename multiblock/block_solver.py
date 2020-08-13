@@ -39,6 +39,7 @@ class BlockSolver:
             ma0,
             # simulation
             dt,
+            is_dual_time=False,
             # method
             convect_method=1,  # 0~1, van Leer/Roe
             # viscous
@@ -66,6 +67,7 @@ class BlockSolver:
         self.e0 = self.p0 / (self.gamma - 1.0) + 0.5 * 1.0
 
         ## simulation
+        self.is_dual_time=is_dual_time
         self.dt = dt
         self.t = 0.0
 
@@ -147,6 +149,14 @@ class BlockSolver:
                               self.w,
                               offset=(1 - self.n_virtual_voxels,
                                       1 - self.n_virtual_voxels))
+        ### dual time
+        if self.is_dual_time:
+            self.w0 = ti.Vector(4, dt=real)
+            self.wsub = ti.Vector(4, dt=real)
+            self.elem_nodes.place(self.w0, self.wsub,
+                              offset=(1 - self.n_virtual_voxels,
+                                      1 - self.n_virtual_voxels))
+
 
         #===================== SURFACES (between cells) ==========================
         ### surf direction vectors with norm = surf area, lengh in z = 1.0
@@ -308,18 +318,25 @@ class BlockSolver:
         ## internal elems only
         ## virtual elems should be initilized by bc (except 4 corner elems, not used)
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
-            # self.q[I] = ti.Vector([
-            #     1.0,
-            #     1.0 * 1.0,
-            #     1.0 * 0.0,
-            #     1.0 * self.e0,
-            # ])
             self.q[I] = ti.Vector([
                 1.0,
-                1.0 * 0.0,
+                1.0 * 1.0,
                 1.0 * 0.0,
                 1.0 * self.e0,
             ])
+            # self.q[I] = ti.Vector([
+            #     1.0,
+            #     1.0 * 0.0,
+            #     1.0 * 0.0,
+            #     1.0 * self.e0,
+            # ])
+
+        for I in ti.grouped(ti.ndrange(*self.range_elems)):
+            self.w[I] = self.q[I]
+            if ti.static(self.is_dual_time):
+                self.w0[I] = self.q[I]
+                self.wsub[I] = self.q[I]
+
 
     ##################
     ## call all init functions here
@@ -1179,7 +1196,7 @@ class BlockSolver:
     def step_oneblock(self):
         # RK-3
         self.time_save_q()
-        for i in range(3):
+        for i in range(5):
             # calc from new q
             self.bc(0)
             self.clear_flux()
@@ -1208,3 +1225,44 @@ class BlockSolver:
     ### in multi-block solver, bc and interconnection bc calls are inserted between loops
     ### step() is rearranged in multi-block class
     ### TODO: better methods?
+
+
+    @ti.kernel
+    def time_save_q_dual(self):
+        # save q to w, w0
+        for i, j in self.q:
+            self.w0[i, j] = self.w[i, j]
+            self.w[i, j] = self.q[i, j]
+
+    @ti.kernel
+    def time_save_q_dual_sub(self):
+        # save q to w, w0
+        for i, j in self.q:
+            self.wsub[i, j] = self.q[i, j]
+
+    @ti.kernel
+    def time_march_rk3_dual(self, stage: ti.i32):
+        coef = 1.0
+
+        if stage == 0:
+            coef = 0.1481
+        elif stage == 1:
+            coef = 0.4
+
+        dt_sub = 0.1 * self.dt
+        cdt_sub = 1.0 / (1.0 + 3.0 / 2.0 / self.dt * coef * dt_sub)
+
+        for I in ti.grouped(ti.ndrange(*self.range_elems)):
+            dq = 1.0 / self.dt * self.elem_area[I] * 3.0 / 2.0 * self.w[I]
+            # dq = 1.0 / self.dt * self.elem_area[I] * (2.0 * self.w[I] - 0.5 * self.w0[I])
+            self.flux[I] *= coef * dt_sub / self.elem_area[I] * cdt_sub
+            self.q[I] = (1.0 + 3.0 / 2.0 / self.dt * self.elem_area[I]) * self.wsub[I] - self.flux[I] - dq
+
+    @ti.kernel
+    def time_march_rk3_dual_last(self):
+        coef = 1.0
+
+        for I in ti.grouped(ti.ndrange(*self.range_elems)):
+            self.flux[I] *= coef * self.dt / self.elem_area[I]
+            self.q[I] = self.wsub[I] - self.flux[I]
+

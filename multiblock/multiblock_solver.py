@@ -33,6 +33,7 @@ class MultiBlockSolver:
             ma0,
             # simulation
             dt,
+            is_dual_time=False,
             # method
             convect_method=1,  # 0~1, van Leer/Roe
             # viscous
@@ -65,6 +66,7 @@ class MultiBlockSolver:
         self.e0 = self.p0 / (self.gamma - 1.0) + 0.5 * 1.0
 
         ## simulation
+        self.is_dual_time = is_dual_time
         self.dt = dt
         self.t = 0.0
 
@@ -113,6 +115,7 @@ class MultiBlockSolver:
                     block_dimension[1],  # nj
                     ma0,
                     dt,
+                    is_dual_time=is_dual_time,
                     convect_method=convect_method,
                     is_viscous=is_viscous,
                     temp0_raw=temp0_raw,
@@ -292,6 +295,67 @@ class MultiBlockSolver:
                 solver.time_march_rk3(i)
 
 
+    def step_dual(self):
+        # RK-3
+        for solver in self.solvers:
+            solver.time_save_q_dual()
+
+        for _ in range(2):
+            for solver in self.solvers:
+                solver.time_save_q_dual_sub()
+            for i in range(3):
+                # calc from new q
+                for solver in self.solvers:
+                    solver.bc(0)
+                self.bc_interblock(0)
+
+                for solver in self.solvers:
+                    solver.clear_flux()
+                    if self.is_viscous:
+                        # self.flux_diffusion()
+                        solver.flux_diffusion_init()
+                        solver.bc(1)
+
+                self.bc_interblock(1)
+
+                if self.is_viscous:
+                    for solver in self.solvers:
+                        solver.flux_diffusion_calc()
+
+                for solver in self.solvers:
+                    solver.flux_advect()
+
+                for solver in self.solvers:
+                    solver.time_march_rk3_dual(i)
+
+        ## update main
+        for solver in self.solvers:
+            solver.time_save_q_dual_sub()
+        # calc from new q
+        for solver in self.solvers:
+            solver.bc(0)
+        self.bc_interblock(0)
+
+        for solver in self.solvers:
+            solver.clear_flux()
+            if self.is_viscous:
+                # self.flux_diffusion()
+                solver.flux_diffusion_init()
+                solver.bc(1)
+
+        self.bc_interblock(1)
+
+        if self.is_viscous:
+            for solver in self.solvers:
+                solver.flux_diffusion_calc()
+
+        for solver in self.solvers:
+            solver.flux_advect()
+
+        for solver in self.solvers:
+            solver.time_march_rk3_dual_last()        
+
+
     #--------------------------------------------------------------------------
     #  Main loop
     #--------------------------------------------------------------------------
@@ -328,7 +392,10 @@ class MultiBlockSolver:
 
             ## simulation step
             for step in range(self.display_steps):
-                self.step()
+                if self.is_dual_time:
+                    self.step_dual()
+                else:
+                    self.step()
                 # for block in range(self.n_blocks):
                 #     self.solvers[block].step()
                 self.t += self.dt
