@@ -19,7 +19,7 @@ real = ti.f32
 
 ## sizes
 ni = 240             # points on the cylinder surface
-nj = 116            # points in normal direction
+nj = 110            # points in normal direction
 radius = 1.0        # cylinder radius (use as dimensionless unit)
 # length_wall = 0.05  # cell height nearest wall
 # stretch_rate = 1.005 # cell stretch rate
@@ -35,7 +35,7 @@ def generate_edge_points_exp_stretch(d_start, stretch_rate, n) -> real:
 def generate_surface_angle(n, ni) -> real:
     ## n: index in [0, nj - 1]
     alpha = 2.0 * np.pi / (ni - 1) * n
-    return np.pi - alpha
+    return -1.0 * alpha
 
 @ti.kernel
 def generate_circular_grids(
@@ -81,7 +81,7 @@ if __name__ == '__main__':
         nj=nj,
         ma0=ma0,
         dt=1e-4,
-        convect_method=0,
+        convect_method=1,
         is_viscous=False,
         temp0_raw=300,
         re0=re0,
@@ -107,20 +107,20 @@ if __name__ == '__main__':
 
     bc_array = [
         ## move to bc connection
-        # (2, 1, nj + 1, 0, 0, None),     # left interconnection, upper side, symmetry for now
-        # (2, 1, nj + 1, 0, 1, None),     # left interconnection, lower side, symmetry for now
+        # (2, 1, nj + 1, 0, 0, None),
+        # (2, 1, nj + 1, 0, 1, None),
         (3, 1, ni + 1, 1, 0, None),       # wall cylinder
 
-        (0, 1, ni // 4 + 1, 1, 1, 0),  # far-field, left upper side, inlet for left half
-        (0, ni + 2 - ni // 4, ni + 1, 1, 1, 0),  # far-field, left lower side, inlet for left half
-        (1, ni // 4 + 1, ni + 2 - ni // 4, 1, 1, None),     # right half far-field, outlet
+        (1, 1, ni // 4 + 1, 1, 1, None),  # far-field, right lower side, outlet
+        (1, ni + 2 - ni // 4, ni + 1, 1, 1, None),  # far-field, right upper side, outlet
+        (0, ni // 4 + 1, ni + 2 - ni // 4, 1, 1, 0),     # left half far-field, inlet
     ]
     solver.set_bc(bc_array, bc_q_values)
 
     bc_connection_array = [
         ## ((start, march_plus_or_minus_direction(1/-1), surface direction (0/1, i or j), surface start or end(0/1, surf i0/j0 or iend/jend)))
-        ((1, 1, 0, 0), (1, 1, 0, 1), nj),   # left interconnection, upper side, copy from lower side
-        ((1, 1, 0, 1), (1, 1, 0, 0), nj),   # left interconnection, lower side
+        ((1, 1, 0, 0), (1, 1, 0, 1), nj),   # right interconnection, lower side, copy from upper side
+        ((1, 1, 0, 1), (1, 1, 0, 0), nj),   # right interconnection, upper side
     ]
     solver.set_bc_connection(bc_connection_array)
 

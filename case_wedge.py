@@ -90,6 +90,7 @@ if __name__ == '__main__':
     solver.set_bc(bc_array, bc_q_values)
 
     solver.set_display_options(
+            display_steps=1,
             display_show_grid=False,
             display_show_xc=False,
             display_show_velocity=True,

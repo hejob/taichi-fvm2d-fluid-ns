@@ -52,7 +52,7 @@ if __name__ == '__main__':
         ni=ni,
         nj=nj,
         ma0=ma0,
-        dt=1e-5,
+        dt=4e-6,
         is_viscous=True,
         temp0_raw=273,
         re0=re0,
@@ -89,6 +89,7 @@ if __name__ == '__main__':
     solver.set_bc(bc_array, bc_q_values)
 
     solver.set_display_options(
+            display_steps=1,
             display_show_grid=False,
             display_show_xc=False,
             display_show_velocity=True,

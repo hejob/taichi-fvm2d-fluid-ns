@@ -47,6 +47,8 @@ class Solver:
             ma0,
             # simulation
             dt,
+            # method
+            convect_method=1,  # 0~1, van Leer/Roe
             # viscous
             is_viscous=False,
             temp0_raw=273,
@@ -62,6 +64,8 @@ class Solver:
             output_line_var=7,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
             output_line_plot_var=0):
         ### TODO: read from input files, but are there perforamance issues?
+
+        self.is_debug = False
 
         ## base properties
         self.dim = 2
@@ -82,6 +86,9 @@ class Solver:
         ## simulation
         self.dt = dt
         self.t = 0.0
+
+        ## convect flux
+        self.convect_method = convect_method
 
         ## viscous Navier-Stokes simulation properties
         self.is_convect_calculated = True  # a switch to skip convect flux only for debug
@@ -596,8 +603,10 @@ class Solver:
                 # self.q[bc_I] = self.q[I]
             elif stage == 1:
                 if ti.static(self.is_viscous):
-                    self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
-                    self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
+                    # self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
+                    # self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
+                    self.gradient_v_c[bc_I] = 2.0 * self.gradient_v_c[I] - self.gradient_v_c[int_I]
+                    self.gradient_temp_c[bc_I] = 2.0 * self.gradient_temp_c[I] - self.gradient_temp_c[int_I]
 
     @ti.kernel
     def bc_inlet_subsonic(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -779,6 +788,27 @@ class Solver:
             # t = Ma_far**2 * gamma * p / rho
         return prim
 
+    @ti.func
+    def q_to_primitive_ruvpah(self, q: ti.template()) -> ti.template():
+        rho = q[0]
+        prim = ti.Vector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # (rho, u, v, e)
+        if rho < 1e-10:  # this should not happen, rho < 0
+            prim = ti.Vector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        else:
+            rho_inv = 1.0 / rho
+            ux = q[1] * rho_inv
+            uy = q[2] * rho_inv
+            # e = ti.abs(q[3] * rho_inv - 0.5 *
+                       # (ux**2 + uy**2))  # TODO: abs or clamp?
+            # p_on_rho = e * (self.gamma - 1.0)
+            # p = p_on_rho * rho
+            p = ti.abs(q[3] - 0.5 * rho * (ux**2 + uy**2)) * ti.static(self.gamma - 1.0)
+            a = (ti.static(self.gamma) * p * rho_inv)**0.5
+            h = ti.static(self.gamma / (self.gamma - 1.0)) * p * rho_inv + 0.5 * (ux**2 + uy**2)
+
+            prim = ti.Vector([rho, ux, uy, p, a, h])
+        return prim
+
     #############
     ##  q to [u, v, t]
     @ti.func
@@ -901,12 +931,98 @@ class Solver:
         return (flux_plus + flux_minus)
 
     @ti.func
-    def flux_van_leer(self):
+    def calc_roe_flux(
+        self, ql: ti.template(), qr: ti.template(), vec_normal: ti.template()
+    ) -> ti.template():
+        ## calculate van leer flux flowing from ql to qr, outside cell normal is vec_normal from left to right
+        vec_dir = vec_normal.normalized()
+
+        R = self.p0  # R=Cp-Cv
+        prim_l = self.q_to_primitive_ruvpah(ql)
+        prim_r = self.q_to_primitive_ruvpah(qr)
+
+        rho_l = prim_l[0]
+        rho_r = prim_r[0]
+        v_l = ti.Vector([prim_l[1], prim_l[2]])
+        v_r = ti.Vector([prim_r[1], prim_r[2]])
+        p_l = prim_l[3]
+        p_r = prim_r[3]
+        a_l = prim_l[4]
+        a_r = prim_r[4]
+        h_l = prim_l[5]
+        h_r = prim_r[5]
+
+
+        r = (rho_r / rho_l)**0.5
+
+        rho_m = (rho_r * rho_l)**0.5
+        v_m = (v_l + v_r * r) / (1.0 + r)
+        p_m = (p_l + p_r * r) / (1.0 + r)
+        a_m = (ti.static(self.gamma) * p_m / rho_m)**0.5
+        h_m = ti.static(self.gamma / (self.gamma - 1.0)) * p_m / rho_m + 0.5 * v_m.norm_sqr()
+
+        v_normal = v_m.dot(vec_dir)
+        a_normal = a_m
+
+        dv_normal = (v_r - v_l).dot(vec_dir)
+        v_limit = 0.5 * (ti.abs(dv_normal) + ti.abs(a_r - a_l))
+        eigen1 = ti.abs(v_normal)
+        eigen2 = ti.max(v_limit, ti.abs(v_normal + a_normal))
+        eigen3 = ti.max(v_limit, ti.abs(v_normal - a_normal))
+
+        a_star = 0.5 * (eigen2 + eigen3)
+        ma_star = 0.5 * (eigen2 - eigen3) / a_normal
+
+        drho = rho_r - rho_l
+        dv = v_r - v_l
+        dp = p_r - p_l
+        drho_v = rho_m * dv + drho * v_m
+        drho_e = dp / ti.static(self.gamma - 1.0) + 0.5 * v_m.norm_sqr() * drho + rho_m * (v_m.dot(dv))
+
+        dv_roe = ma_star * dv_normal + (a_star - eigen1) * dp / rho_m / (a_m**2)
+        dp_roe = ma_star * dp + (a_star - eigen1) * rho_m * dv_normal
+
+        drho1 = eigen1 * drho + dv_roe * rho_m
+        drho_v1 = eigen1 * drho_v + rho_m * dv_roe * v_m + dp_roe * vec_dir
+        drho_e1 = eigen1 * drho_e + rho_m * dv_roe * h_m + dp_roe * v_normal
+
+        v_normal_l = v_l.dot(vec_dir)
+        v_normal_r = v_r.dot(vec_dir)
+        rho_v_normal_l = rho_l * v_normal_l
+        rho_v_normal_r = rho_r * v_normal_r
+
+        drho_flux = -0.5 * (rho_v_normal_l + rho_v_normal_r - drho1)
+        dv_flux = -0.5 * (rho_v_normal_l * v_l + rho_v_normal_r * v_r + (p_l + p_r) * vec_dir - drho_v1)
+        de_flux = -0.5 * (rho_v_normal_l * h_l + rho_v_normal_r * h_r - drho_e1)
+
+        # debug
+        if ti.static(self.is_debug):
+            print('ms', r, rho_m, v_m, p_m, a_m, h_m)
+            print('normal', v_normal, a_normal, dv_normal)
+            print('eigen', v_limit, eigen1, eigen2, eigen3, a_star, ma_star)
+            print('dq', drho, dv, dp, drho_v, drho_e)
+            print('droe', dv_roe, dp_roe)
+            print('d1', drho1, drho_v1, drho_e1)
+            print('lrnormal', v_normal_l, v_normal_r, rho_v_normal_l, rho_v_normal_r)
+            print('flux', drho_flux, dv_flux, de_flux)
+
+        ### TODO: minus 1.0?
+        return -1.0 * ti.Vector([drho_flux, dv_flux[0], dv_flux[1], de_flux])
+
+
+    @ti.func
+    def calc_flux_advect(self):
+        flux = ti.Vector([0.0, 0.0, 0.0, 0.0])
         ## x dir to the right, flux across the same surf is positive/negative into left/right cells respectively
         for I in ti.grouped(ti.ndrange(*self.range_surfs_ij_i)):
             offset_right = ti.Vector([1, 0])
-            flux = self.calc_van_leer_flux(self.q[I], self.q[I + offset_right],
-                                           self.vec_surf[I, 0])
+            if ti.static(self.convect_method == 0):  # van Leer
+                flux = self.calc_van_leer_flux(self.q[I],
+                                               self.q[I + offset_right],
+                                               self.vec_surf[I, 0])
+            else:
+                flux = self.calc_roe_flux(self.q[I], self.q[I + offset_right],
+                                          self.vec_surf[I, 0])
             # TODO: maybe we can check if is adding to virtual element, but bcs will update them later, no need?
             self.flux[I] += flux
             self.flux[I + offset_right] -= flux
@@ -914,8 +1030,13 @@ class Solver:
         ## y dir to the top, flux across the same surf is positive/negative into left/right cells respectively
         for I in ti.grouped(ti.ndrange(*self.range_surfs_ij_j)):
             offset_top = ti.Vector([0, 1])
-            flux = self.calc_van_leer_flux(self.q[I], self.q[I + offset_top],
-                                           self.vec_surf[I, 1])
+            if ti.static(self.convect_method == 0):  # van Leer
+                flux = self.calc_van_leer_flux(self.q[I],
+                                               self.q[I + offset_top],
+                                               self.vec_surf[I, 1])
+            else:
+                flux = self.calc_roe_flux(self.q[I], self.q[I + offset_top],
+                                          self.vec_surf[I, 1])
             # TODO: maybe we can check if is adding to virtual element, but bcs will update them later, no need?
             self.flux[I] += flux
             self.flux[I + offset_top] -= flux
@@ -929,7 +1050,7 @@ class Solver:
         # TODO: calculate ql, qr used on surface from left/right
         # now we use first-order approximation directly from left/right cell center
         if self.is_convect_calculated:
-            self.flux_van_leer()
+            self.calc_flux_advect()
 
     #--------------------------------------------------------------------------
     #  Interpolations for gradients on surface/center
