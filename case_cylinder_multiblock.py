@@ -123,6 +123,7 @@ bc_connection_array = [
 solver.set_bc_connection(bc_connection_array)
 
 solver.set_display_options(
+        display_color_map=1,
         display_steps=20,
         display_show_grid=False,
         display_show_xc=False,

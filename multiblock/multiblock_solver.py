@@ -162,6 +162,7 @@ class MultiBlockSolver:
     ########################
     # Set extra display
     def set_display_options(self, display_steps=20,
+                            display_color_map=0,
                             display_show_grid=False,
                             display_show_xc=False,
                             display_show_velocity=False,
@@ -170,6 +171,7 @@ class MultiBlockSolver:
                             display_show_surface_norm=False):
         self.display_steps = display_steps
         self.drawer.set_display_options(
+            display_color_map = display_color_map,
             display_show_grid = display_show_grid,
             display_show_xc = display_show_xc,
             display_show_velocity = display_show_velocity,

@@ -29,6 +29,7 @@ class Drawer:
             display_field=True,
             display_value_min=0.0,
             display_value_max=1.0,
+            display_color_map=0,
             output_line=False,
             output_line_ends=((), ()),
             output_line_num_points=200,
@@ -50,6 +51,7 @@ class Drawer:
         self.display_field = display_field
         self.display_value_min = display_value_min
         self.display_value_max = display_value_max
+        self.display_color_map = display_color_map
         ## switches, can be set later
         self.display_show_grid = False
         self.display_show_xc = False
@@ -111,12 +113,14 @@ class Drawer:
     ########################
     # Set extra display
     def set_display_options(self,
+                            display_color_map=0,
                             display_show_grid=False,
                             display_show_xc=False,
                             display_show_velocity=False,
                             display_show_velocity_skip=(4, 4),
                             display_show_surface=False,
                             display_show_surface_norm=False):
+        self.display_color_map = display_color_map
         self.display_show_grid = display_show_grid
         self.display_show_xc = display_show_xc
         self.display_show_velocity = display_show_velocity
@@ -302,13 +306,28 @@ class Drawer:
         return p * ti.Vector([1.0 / self.width, 1.0 / self.height])
 
     @ti.func
+    def util_color_map_value(self, c0, c1, v) -> ti.i32:
+        vl = ti.max(0.0, ti.min(1.0, v))
+        r = c1 - c0
+        d = ti.cast(c0 + r * vl, ti.i32)
+        return d
+
+    @ti.func
     def util_ti_scale_value_to_color(self, c) -> ti.i32:
         max_value = self.display_value_max
         min_value = self.display_value_min
         v = (c - min_value) / (max_value - min_value)
-        # map [0,1] ~ gray color 0~255
-        color_gray = ti.min(255, ti.max(0, v * 256.0))
-        value = ti.cast(color_gray, ti.i32) * 0x010101
+        
+        value = 0
+        if ti.static(self.display_color_map == 0):
+            # map [0,1] ~ gray color 0~255
+            color_gray = ti.min(255, ti.max(0, v * 256.0))
+            value = ti.cast(color_gray, ti.i32) * 0x010101
+        else:
+            r = self.util_color_map_value(0x01, 0xff, v)
+            g = self.util_color_map_value(0x20, 0x99, v)
+            b = self.util_color_map_value(0xff, 0x00, v)
+            value = r * 0x010000 + g * 0x0100 + b
         return value
 
     @ti.kernel

@@ -72,7 +72,7 @@ solver = MultiBlockSolver(
     re0=1e5, # dummy
     gui_size=(600, 200),
     display_field=True,
-    display_value_min=0.0,
+    display_value_min=1.5,
     display_value_max=3.0,
     output_line=True,
     output_line_ends=((0.05, 0.5), (2.95, 0.5)),
@@ -130,6 +130,7 @@ solver.set_bc_connection(bc_connection_array)
 
 solver.set_display_options(
         display_steps=100,
+        display_color_map=1,
         display_show_grid=False,
         display_show_xc=False,
         display_show_velocity=False,
