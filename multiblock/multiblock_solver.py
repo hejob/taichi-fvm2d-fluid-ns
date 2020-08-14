@@ -49,7 +49,8 @@ class MultiBlockSolver:
             output_line_ends=((), ()),
             output_line_num_points=200,
             output_line_var=7,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
-            output_line_plot_var=0):
+            output_line_plot_var=0,
+            display_gif_files=False):
 
         self.is_debug = False
 
@@ -105,6 +106,9 @@ class MultiBlockSolver:
         self.output_line_var = output_line_var  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
         self.output_line_plot_var = output_line_plot_var  # output x on plot
 
+        ## output gif
+        self.display_gif_files = display_gif_files
+
         ## INIT blocks
         self.solvers = [
             (
@@ -150,7 +154,8 @@ class MultiBlockSolver:
                         output_line_ends=output_line_ends,
                         output_line_num_points=output_line_num_points,
                         output_line_var=output_line_var,
-                        output_line_plot_var=output_line_plot_var)
+                        output_line_plot_var=output_line_plot_var,
+                        display_gif_files=display_gif_files)
 
     ########################
     # Call this before solve to set boundary connections
@@ -168,16 +173,18 @@ class MultiBlockSolver:
                             display_show_velocity=False,
                             display_show_velocity_skip=(4, 4),
                             display_show_surface=False,
-                            display_show_surface_norm=False):
+                            display_show_surface_norm=False,
+                            display_gif_files=False):
         self.display_steps = display_steps
         self.drawer.set_display_options(
-            display_color_map = display_color_map,
-            display_show_grid = display_show_grid,
-            display_show_xc = display_show_xc,
-            display_show_velocity = display_show_velocity,
-            display_show_velocity_skip = display_show_velocity_skip,
-            display_show_surface = display_show_surface,
-            display_show_surface_norm = display_show_surface_norm)
+            display_color_map=display_color_map,
+            display_show_grid=display_show_grid,
+            display_show_xc=display_show_xc,
+            display_show_velocity=display_show_velocity,
+            display_show_velocity_skip=display_show_velocity_skip,
+            display_show_surface=display_show_surface,
+            display_show_surface_norm=display_show_surface_norm,
+            display_gif_files=display_gif_files)
 
     ###########
     # Set all solvers debug mode
@@ -383,6 +390,7 @@ class MultiBlockSolver:
         # for solver in self.solvers:
         #     solver.convect_method = 0
 
+        step_index = 0
         while self.gui.running:
             for e in self.gui.get_events(ti.GUI.PRESS):
                 if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
@@ -394,7 +402,7 @@ class MultiBlockSolver:
                 ## TODO: this will cause problems?
                 # # time.sleep(1)
                 if self.display_field:
-                    self.drawer.display()
+                    self.drawer.display(step_index)
                 continue
 
             ## simulation step
@@ -412,11 +420,11 @@ class MultiBlockSolver:
             ## TODO: more useful information to console
             print(f't: {self.t:.03f}')
             if self.display_field:
-                self.drawer.display()
+                self.drawer.display(step_index)
             if self.output_line:
                 self.drawer.display_output_line()
 
-            # step_index += 1
+            step_index += 1
             # if step_index == 100:
             #     for solver in self.solvers:
             #         solver.convect_method = self.convect_method

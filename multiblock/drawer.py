@@ -34,7 +34,8 @@ class Drawer:
             output_line_ends=((), ()),
             output_line_num_points=200,
             output_line_var=7,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
-            output_line_plot_var=0):
+            output_line_plot_var=0,
+            display_gif_files=False):
 
         self.gamma = 1.4
 
@@ -68,6 +69,9 @@ class Drawer:
         self.output_line_plot_var = output_line_plot_var  # output x on plot
 
         self.output_line_label = ('Rho', 'u', 'v', 'et', 'unorm', 'p', 'a', 'Ma')[self.output_line_var]
+
+        ## output
+        self.display_gif_files = display_gif_files
 
         ## taichi vars
         self.init_allocations()
@@ -119,7 +123,8 @@ class Drawer:
                             display_show_velocity=False,
                             display_show_velocity_skip=(4, 4),
                             display_show_surface=False,
-                            display_show_surface_norm=False):
+                            display_show_surface_norm=False,
+                            display_gif_files=False):
         self.display_color_map = display_color_map
         self.display_show_grid = display_show_grid
         self.display_show_xc = display_show_xc
@@ -127,6 +132,7 @@ class Drawer:
         self.display_show_velocity_skip = display_show_velocity_skip
         self.display_show_surface = display_show_surface
         self.display_show_surface_norm = display_show_surface_norm
+        self.display_gif_files = display_gif_files
 
     ########################
     # Set GUI handle
@@ -325,7 +331,7 @@ class Drawer:
             value = ti.cast(color_gray, ti.i32) * 0x010101
         else:
             r = self.util_color_map_value(0x01, 0xff, v)
-            g = self.util_color_map_value(0x20, 0x99, v)
+            g = self.util_color_map_value(0x20, 0xbb, v)
             b = self.util_color_map_value(0xff, 0x00, v)
             value = r * 0x010000 + g * 0x0100 + b
         return value
@@ -432,9 +438,9 @@ class Drawer:
         su2 = self.util_rotate_vector(uv, -140)
         p2 = self.line_arrow(p1, su1, 0.02 * 0.3)
         p3 = self.line_arrow(p1, su2, 0.02 * 0.3)
-        self.gui.line(p0, p1, radius=1, color=0x669922)
-        self.gui.line(p1, p2, radius=1, color=0x669922)
-        self.gui.line(p1, p3, radius=1, color=0x669922)
+        self.gui.line(p0, p1, radius=1, color=0xcc4400)
+        self.gui.line(p1, p2, radius=1, color=0xcc4400)
+        self.gui.line(p1, p3, radius=1, color=0xcc4400)
 
     def display_v(self):
         for solver in self.solvers:
@@ -465,7 +471,7 @@ class Drawer:
             self.plot_fig = plt.figure()
             plt.axis([0, 1.0, 0, 3.0])
 
-    def display(self):
+    def display(self, step_index):
         ### These are slow, to be removed
         # self.display_img.fill(0.0)
         # self.display_setimage()
@@ -486,7 +492,13 @@ class Drawer:
         if self.display_show_surface:
             self.display_surf_norm(self.display_show_surface_norm)
 
+        ## output gif
+        if self.display_gif_files:
+            gif_name = f'img_{step_index:03}.png'
+            ti.imwrite(self.gui.get_image(), gif_name)
+
         self.gui.show()
+
 
     #--------------------------------------------------------------------------
     #  Plot values on a line

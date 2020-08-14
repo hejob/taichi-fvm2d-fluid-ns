@@ -78,7 +78,7 @@ solver = MultiBlockSolver(
     is_viscous=False,
     temp0_raw=273,
     re0=re0,
-    gui_size=(400, 320),
+    gui_size=(800, 640),
     display_field=True,
     display_value_min=0.0,
     display_value_max=3.0,
@@ -124,13 +124,14 @@ solver.set_bc_connection(bc_connection_array)
 
 solver.set_display_options(
         display_color_map=1,
-        display_steps=20,
+        display_steps=10,
         display_show_grid=False,
         display_show_xc=False,
         display_show_velocity=False,
         display_show_velocity_skip=(4,4),
         display_show_surface=False,
-        display_show_surface_norm=False
+        display_show_surface_norm=False,
+        display_gif_files=True
     )
 
 ### start simulation loop
@@ -142,4 +143,3 @@ print(f'Solver time: {time.time() - t:.3f}s')
 ti.kernel_profiler_print()
 ti.core.print_profile_info()
 ti.core.print_stat()
-

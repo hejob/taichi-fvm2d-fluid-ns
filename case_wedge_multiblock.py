@@ -64,10 +64,10 @@ if __name__ == '__main__':
         is_viscous=True,
         temp0_raw=273,
         re0=re0,
-        gui_size=(400, 320),
+        gui_size=(800, 640),
         display_field=True,
-        display_value_min=0.0,
-        display_value_max=3.0,
+        display_value_min=1.8,
+        display_value_max=2.4,
         output_line=True,
         output_line_ends=((0.1, 0.4), (0.9, 0.4)),
         output_line_num_points=50,
@@ -97,13 +97,15 @@ if __name__ == '__main__':
     solver.solvers[0].set_bc(bc_array, bc_q_values)
 
     solver.set_display_options(
+            display_color_map=1,
             display_steps=20,
             display_show_grid=False,
             display_show_xc=False,
             display_show_velocity=True,
             display_show_velocity_skip=(16,8),
             display_show_surface=False,
-            display_show_surface_norm=False
+            display_show_surface_norm=False,
+            display_gif_files=True
         )
 
     ### start simulation loop
