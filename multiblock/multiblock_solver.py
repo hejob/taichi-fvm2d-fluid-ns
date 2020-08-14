@@ -376,6 +376,11 @@ class MultiBlockSolver:
         self.drawer.init_display()
 
         pause = False
+        # step_index = 1
+        # # start from van leer
+        # for solver in self.solvers:
+        #     solver.convect_method = 0
+
         while self.gui.running:
             for e in self.gui.get_events(ti.GUI.PRESS):
                 if e.key in [ti.GUI.ESCAPE, ti.GUI.EXIT]:
@@ -408,3 +413,8 @@ class MultiBlockSolver:
                 self.drawer.display()
             if self.output_line:
                 self.drawer.display_output_line()
+
+            # step_index += 1
+            # if step_index == 100:
+            #     for solver in self.solvers:
+            #         solver.convect_method = self.convect_method

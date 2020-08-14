@@ -64,8 +64,8 @@ solver = MultiBlockSolver(
     n_blocks=2,
     block_dimensions=[(ni_step, nj_step), (ni_main, nj_main)],
     ma0=ma0,
-    dt=1e-6,
-    is_dual_time=True,
+    dt=1e-5,
+    is_dual_time=False,
     convect_method=1,
     is_viscous=False,
     temp0_raw=273,
@@ -101,8 +101,8 @@ bc_array_step = [
     (3, 1, nj_step + 1, 0, 1, None),     # right wall
     
 
-    (3, 1, ni_step + 1, 1, 0, None),     # down wall
-    # (2, 1, ni_step + 1, 1, 0, None),     # down sym?
+    # (3, 1, ni_step + 1, 1, 0, None),     # down wall
+    (2, 1, ni_step + 1, 1, 0, None),     # down sym?
 
     # (3, 1, ni_step + 1, 1, 1, None),     # up wall -> connect
 ]
@@ -114,9 +114,9 @@ bc_array_main = [
     (1, 1, nj_main + 1, 0, 1, None),     # right outlet
 
     # (3, 1, ni_step + 1, 1, 0, None),     # down wall -> connect
-    (3, ni_step + 1, ni_main + 1, 1, 0, None),     # down wall
+    (4, ni_step + 1, ni_main + 1, 1, 0, None),     # down wall
 
-    (3, 1, ni_main + 1, 1, 1, None),     # up wall
+    (4, 1, ni_main + 1, 1, 1, None),     # up wall
 ]
 solver.solvers[1].set_bc(bc_array_main, bc_q_values)
 

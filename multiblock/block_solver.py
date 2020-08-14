@@ -41,7 +41,7 @@ class BlockSolver:
             dt,
             is_dual_time=False,
             # method
-            convect_method=1,  # 0~1, van Leer/Roe
+            convect_method=1,  # 0~1, van Leer/Roe/Roe-RHLL
             # viscous
             is_viscous=False,
             temp0_raw=273,
@@ -388,6 +388,24 @@ class BlockSolver:
                 offset = ti.Vector([0, 1])
         return (range_bc_x, range_bc_y, offset)
 
+    # offset to calc bc surf's index
+    # NOTICE this is surf's plus direction, not always points to the bc side (positive/negative)
+    # surf_inside_normal = self.vec_surf[I + offset_surf_range, dir]
+    @ti.func
+    def calc_bc_surf_range(self, dir, end) -> ti.template():
+        offset_surf_range = ti.Vector([0, 0])
+        if dir == 0:  #x
+            if end == 0:  #right
+                offset_surf_range = ti.Vector([0, 0])
+            else:
+                offset_surf_range = ti.Vector([-1, 0])
+        else:
+            if end == 0:  #right
+                offset_surf_range = ti.Vector([0, 0])
+            else:
+                offset_surf_range = ti.Vector([0, -1])
+        return offset_surf_range
+
     @ti.kernel
     def bc_inlet_super(self, rng_x: ti.template(), rng_y: ti.template(),
                        dir: ti.template(), end: ti.template(), q0: real,
@@ -414,19 +432,34 @@ class BlockSolver:
                     dir: ti.template(), end: ti.template(), stage: ti.i32):
         rng = ti.Vector([rng_x, rng_y])
         range_bc_x, range_bc_y, offset = self.calc_bc_range(rng, dir, end)
+        offset_surf_range = self.calc_bc_surf_range(dir, end)
         for I in ti.grouped(
                 ti.ndrange((range_bc_x[0], range_bc_x[1]),
                            (range_bc_y[0], range_bc_y[1]))):
             bc_I = I + offset
+            surf_inside_normal = self.vec_surf[I + offset_surf_range, dir]
+            if ti.static(end == 1):
+                surf_inside_normal *= -1.0
+            surf_inside_dir = surf_inside_normal.normalized()
+
             if stage == -1:
                 self.elem_area[bc_I] = self.elem_area[I]
                 self.elem_width[bc_I] = self.elem_width[I]
             elif stage == 0:
-                self.q[bc_I] = self.q[I]
+                # self.q[bc_I] = self.q[I]
+                rho_uv = ti.Vector([self.q[I][1], self.q[I][2]])
+                rho_reflect = rho_uv - 2.0 * rho_uv.dot(surf_inside_dir) * surf_inside_dir
+                self.q[bc_I] = ti.Vector([
+                                    self.q[I][0],
+                                    rho_reflect[0], rho_reflect[1],
+                                    self.q[I][3],
+                                ])
             elif stage == 1:
                 if ti.static(self.is_viscous):
-                    self.gradient_v_c[bc_I] = -1.0 * self.gradient_v_c[I]
-                    self.gradient_temp_c[bc_I] = -1.0 * self.gradient_temp_c[I]
+                    ### TODO: gradient v is not right, should check normal/t directions
+                    self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
+                    # self.gradient_temp_c[bc_I] = -1.0 * self.gradient_temp_c[I]
+                    self.gradient_temp_c[bc_I] = self.gradient_temp_c[I] * self.gradient_temp_c[I].dot(surf_inside_dir) * surf_inside_dir
 
     @ti.kernel
     def bc_wall_slip(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -434,43 +467,43 @@ class BlockSolver:
         rng = ti.Vector([rng_x, rng_y])
         range_bc_x, range_bc_y, offset = self.calc_bc_range(rng, dir, end)
 
-        offset_surf_range = ti.Vector([0, 0])
-        if dir == 0:  #x
-            if end == 0:  #right
-                offset_surf_range = ti.Vector([0, 0])
-            else:
-                offset_surf_range = ti.Vector([-1, 0])
-        else:
-            if end == 0:  #right
-                offset_surf_range = ti.Vector([0, 0])
-            else:
-                offset_surf_range = ti.Vector([0, -1])
+        offset_surf_range = self.calc_bc_surf_range(dir, end)
         for I in ti.grouped(
                 ti.ndrange((range_bc_x[0], range_bc_x[1]),
                            (range_bc_y[0], range_bc_y[1]))):
             bc_I = I + offset
+            surf_inside_normal = self.vec_surf[I + offset_surf_range, dir]
+            if ti.static(end == 1):
+                surf_inside_normal *= -1.0
+            surf_inside_dir = surf_inside_normal.normalized()
 
             if stage == -1:
                 self.elem_area[bc_I] = self.elem_area[I]
                 self.elem_width[bc_I] = self.elem_width[I]
             elif stage == 0:
-                surf_inside_normal = self.vec_surf[I + offset_surf_range, dir]
-
-                prim = self.q_to_primitive(self.q[I])
-                rho = prim[0]
-                u = ti.Vector([prim[0], prim[1]])
-                e = prim[3]
-                p = e * (self.gamma - 1.0)
-                surf_inside_dir = surf_inside_normal.normalized()
-                u_slip = u - u.dot(surf_inside_dir) * surf_inside_dir * 2.0
+                ### this is basically the same with symmetry?
+                # prim = self.q_to_primitive(self.q[I])
+                # rho = prim[0]
+                # u = ti.Vector([prim[0], prim[1]])
+                # e = prim[3]
+                # p = e * (self.gamma - 1.0)
+                # u_slip = u - u.dot(surf_inside_dir) * surf_inside_dir * 2.0
+                # self.q[bc_I] = ti.Vector([
+                #     rho, rho * u_slip[0], rho * u_slip[1],
+                #     rho * e + 0.5 * u_slip.norm_sqr()
+                # ])
+                rho_uv = ti.Vector([self.q[I][1], self.q[I][2]])
+                rho_reflect = rho_uv - 2.0 * rho_uv.dot(surf_inside_dir) * surf_inside_dir
                 self.q[bc_I] = ti.Vector([
-                    rho, rho * u_slip[0], rho * u_slip[1],
-                    rho * e + 0.5 * u_slip.norm_sqr()
-                ])
+                                    self.q[I][0],
+                                    rho_reflect[0], rho_reflect[1],
+                                    self.q[I][3],
+                                ])                
             elif stage == 1:
                 if ti.static(self.is_viscous):
                     self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
-                    self.gradient_temp_c[bc_I] = -1.0 * self.gradient_temp_c[I]
+                    # self.gradient_temp_c[bc_I] = -1.0 * self.gradient_temp_c[I]
+                    self.gradient_temp_c[bc_I] = self.gradient_temp_c[I] * self.gradient_temp_c[I].dot(surf_inside_dir) * surf_inside_dir
 
     @ti.kernel
     def bc_wall_noslip(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -478,28 +511,20 @@ class BlockSolver:
         rng = ti.Vector([rng_x, rng_y])
         range_bc_x, range_bc_y, offset = self.calc_bc_range(rng, dir, end)
 
-        offset_surf_range = ti.Vector([0, 0])
-        if dir == 0:  #x
-            if end == 0:  #right
-                offset_surf_range = ti.Vector([0, 0])
-            else:
-                offset_surf_range = ti.Vector([-1, 0])
-        else:
-            if end == 0:  #right
-                offset_surf_range = ti.Vector([0, 0])
-            else:
-                offset_surf_range = ti.Vector([0, -1])
+        offset_surf_range = self.calc_bc_surf_range(dir, end)
         for I in ti.grouped(
                 ti.ndrange((range_bc_x[0], range_bc_x[1]),
                            (range_bc_y[0], range_bc_y[1]))):
             bc_I = I + offset
+            surf_inside_normal = self.vec_surf[I + offset_surf_range, dir]
+            if ti.static(end == 1):
+                surf_inside_normal *= -1.0
+            surf_inside_dir = surf_inside_normal.normalized()
 
             if stage == -1:
                 self.elem_area[bc_I] = self.elem_area[I]
                 self.elem_width[bc_I] = self.elem_width[I]
             elif stage == 0:
-                surf_inside_normal = self.vec_surf[I + offset_surf_range, dir]
-
                 prim = self.q_to_primitive(self.q[I])
                 rho = prim[0]
                 v = ti.Vector([prim[0], prim[1]])
@@ -509,7 +534,8 @@ class BlockSolver:
             elif stage == 1:
                 if ti.static(self.is_viscous):
                     self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
-                    self.gradient_temp_c[bc_I] = -1.0 * self.gradient_temp_c[I]
+                    # self.gradient_temp_c[bc_I] = -1.0 * self.gradient_temp_c[I]
+                    self.gradient_temp_c[bc_I] = self.gradient_temp_c[I] * self.gradient_temp_c[I].dot(surf_inside_dir) * surf_inside_dir
 
     @ti.kernel
     def bc_outlet_super(self, rng0: ti.template(), rng1: ti.template(),
@@ -812,7 +838,7 @@ class BlockSolver:
     def calc_roe_flux(
         self, ql: ti.template(), qr: ti.template(), vec_normal: ti.template()
     ) -> ti.template():
-        ## calculate van leer flux flowing from ql to qr, outside cell normal is vec_normal from left to right
+        ## calculate roe flux flowing from ql to qr, outside cell normal is vec_normal from left to right
         vec_dir = vec_normal.normalized()
 
         R = self.p0  # R=Cp-Cv
@@ -836,8 +862,10 @@ class BlockSolver:
         rho_m = (rho_r * rho_l)**0.5
         v_m = (v_l + v_r * r) / (1.0 + r)
         p_m = (p_l + p_r * r) / (1.0 + r)
-        a_m = (ti.static(self.gamma) * p_m / rho_m)**0.5
-        h_m = ti.static(self.gamma / (self.gamma - 1.0)) * p_m / rho_m + 0.5 * v_m.norm_sqr()
+        # a_m = (ti.static(self.gamma) * p_m / rho_m)**0.5
+        # h_m = ti.static(self.gamma / (self.gamma - 1.0)) * p_m / rho_m + 0.5 * v_m.norm_sqr()
+        h_m = (h_l + h_r * r) / (1.0 + r)
+        a_m = (ti.static(self.gamma - 1.0) * (h_m - 0.5 * v_m.norm_sqr()))**0.5
 
         v_normal = v_m.dot(vec_dir)
         a_normal = a_m
@@ -887,6 +915,184 @@ class BlockSolver:
         ### TODO: minus 1.0?
         return -1.0 * ti.Vector([drho_flux, dv_flux[0], dv_flux[1], de_flux])
 
+    @ti.func
+    def calc_roe_eigen_modified(self, eig) -> real:
+        # return eig
+        limit = 0.2
+        v = eig # eig >= 0
+        if eig < limit:
+            v = (eig**2 + limit**2) * 0.5 / limit
+        return v
+
+    @ti.func
+    def calc_roe_rhll_flux(
+        self, ql: ti.template(), qr: ti.template(), vec_normal: ti.template()
+    ) -> ti.template():
+        ## calculate roe flux flowing from ql to qr, outside cell normal is vec_normal from left to right
+        vec_dir = vec_normal.normalized()
+
+        ## flux according to surf l/r quantities
+        # R = self.p0  # R=Cp-Cv
+        prim_l = self.q_to_primitive_ruvpah(ql)
+        prim_r = self.q_to_primitive_ruvpah(qr)
+
+        rho_l = prim_l[0]
+        v_l = ti.Vector([prim_l[1], prim_l[2]])
+        p_l = prim_l[3]
+        a_l = prim_l[4]
+        h_l = prim_l[5]
+        rho_r = prim_r[0]
+        v_r = ti.Vector([prim_r[1], prim_r[2]])
+        p_r = prim_r[3]
+        a_r = prim_r[4]
+        h_r = prim_r[5]
+
+        v_normal_l = v_l.dot(vec_dir)
+        v_normal_r = v_r.dot(vec_dir)
+        rho_v_normal_l = rho_l * v_normal_l
+        rho_v_normal_r = rho_r * v_normal_r
+
+        d_flux_l = ti.Vector([
+                        rho_v_normal_l,
+                        rho_v_normal_l * v_l[0] + p_l * vec_dir[0],
+                        rho_v_normal_l * v_l[1] + p_l * vec_dir[1],
+                        rho_v_normal_l * h_l
+                    ])
+        d_flux_r = ti.Vector([
+                        rho_v_normal_r,
+                        rho_v_normal_r * v_r[0] + p_r * vec_dir[0],
+                        rho_v_normal_r * v_r[1] + p_r * vec_dir[1],
+                        rho_v_normal_r * h_r
+                    ])
+        ### original roe
+        # drho_flux = 0.5 * (rho_v_normal_l + rho_v_normal_r)
+        # dv_flux = 0.5 * (rho_v_normal_l * v_l + rho_v_normal_r * v_r + (p_l + p_r) * vec_dir)
+        # de_flux = 0.5 * (rho_v_normal_l * h_l + rho_v_normal_r * h_r)
+
+        ## roe averages of l/r
+        r = (rho_r / rho_l)**0.5
+        rho_m = (rho_r * rho_l)**0.5
+        v_m = (v_l + v_r * r) / (1.0 + r)
+        p_m = (p_l + p_r * r) / (1.0 + r)
+        h_m = (h_l + h_r * r) / (1.0 + r)
+        a_m = (ti.static(self.gamma - 1.0) * (h_m - 0.5 * v_m.norm_sqr()))**0.5
+
+        ## HLL average
+        v_m_normal = v_m.dot(vec_dir)
+        s_l = ti.min(v_normal_l - a_l, v_m_normal - a_m)
+        s_r = ti.max(v_normal_r + a_r, v_m_normal + a_m)
+        s_r_plus  = ti.max(0.0, s_r)
+        s_l_minus = ti.min(0.0, s_l)
+        d_flux_hhl = (s_r_plus * d_flux_l - s_l_minus * d_flux_r) / (s_r_plus - s_l_minus)
+
+        ## split in 2 directions of roe/hll
+        drho = rho_r - rho_l
+        dv = v_r - v_l
+        dp = p_r - p_l
+
+        # n1 - across shock or parallel to shear
+        vec_dir1 = vec_dir
+        if (dv.norm() > 1e-6):
+            vec_dir1 = dv.normalized()
+        vec_dir2 = ti.Vector([-1.0 * vec_dir[1], vec_dir[0]]) # rotate 90 degrees
+        alpha1 = vec_dir.dot(vec_dir1)
+        alpha2 = vec_dir.dot(vec_dir2)
+
+        # needs to be on the same side to normal dir
+        if (alpha1 < 0.0):
+            alpha1 *= -1.0
+            vec_dir1 *= -1.0
+        if (alpha2 < 0.0):
+            alpha2 *= -1.0
+            vec_dir2 *= -1.0
+
+
+
+        # vec_dir1 = vec_dir
+        # vec_dir2 = ti.Vector([-1.0 * vec_dir[1], vec_dir[0]]) # rotate 90 degrees
+        # alpha1 = 1.0
+        # alpha2 = 0.0
+
+
+
+
+
+        ## 4 eigen values in n2 direction
+        vec_dir2_tang = ti.Vector([-1.0 * vec_dir2[1], vec_dir2[0]])  # tang normal 2, may be negative to n1
+        v_m_normal2 = v_m.dot(vec_dir2)
+        v_m_tang2   = v_m.dot(vec_dir2_tang)
+
+        eig1 = ti.abs(v_m_normal2 - a_m)
+        eig2 = ti.abs(v_m_normal2)
+        eig3 = ti.abs(v_m_normal2 + a_m)
+        eig4 = eig2
+
+        eig1_limit = self.calc_roe_eigen_modified(eig1)
+        eig2_limit = self.calc_roe_eigen_modified(eig2)
+        eig3_limit = self.calc_roe_eigen_modified(eig3)
+        eig4_limit = self.calc_roe_eigen_modified(eig4)
+
+        ## rhll coef
+        coef_rhll_dsrlinv = 1.0 / (s_r_plus - s_l_minus)
+        coef_rhll1 = alpha2 * (s_r_plus + s_l_minus) * coef_rhll_dsrlinv
+        coef_rhll2 = 2.0 * alpha1 * s_r_plus * s_l_minus * coef_rhll_dsrlinv
+
+        s_rhll1 = alpha2 * eig1_limit - coef_rhll1 * eig1 - coef_rhll2
+        s_rhll2 = alpha2 * eig2_limit - coef_rhll1 * eig2 - coef_rhll2
+        s_rhll3 = alpha2 * eig3_limit - coef_rhll1 * eig3 - coef_rhll2
+        s_rhll4 = alpha2 * eig4_limit - coef_rhll1 * eig4 - coef_rhll2
+
+        dv_normal2 = dv.dot(vec_dir2)
+        dv_tang2   = dv.dot(vec_dir2_tang)
+        w1 = (dp - rho_m * a_m * dv_normal2) * 0.5 / (a_m**2)
+        w2 = drho - dp / (a_m**2)
+        w3 = (dp + rho_m * a_m * dv_normal2) * 0.5 / (a_m**2)
+        w4 = rho_m * dv_tang2
+
+        ## roe matrix column in direction 2
+        R1 = ti.Vector([
+                        1.0,
+                        v_m[0] - a_m * vec_dir2[0],
+                        v_m[1] - a_m * vec_dir2[1],
+                        h_m - v_m_normal2 * a_m
+                    ])
+        R2 = ti.Vector([
+                        1.0,
+                        v_m[0],
+                        v_m[1],
+                        0.5 * v_m.norm_sqr()
+                    ])
+        R3 = ti.Vector([
+                        1.0,
+                        v_m[0] + a_m * vec_dir2[0],
+                        v_m[1] + a_m * vec_dir2[1],
+                        h_m + v_m_normal2 * a_m
+                    ])
+        R4 = ti.Vector([
+                        0.0,
+                        -1.0 * vec_dir2[1],
+                        vec_dir2[0],
+                        v_m_tang2
+                    ])
+
+        d_flux_rhll_dissipation = (s_rhll1 * w1 * R1 +
+                                s_rhll2 * w2 * R2 +
+                                s_rhll3 * w3 * R3 +
+                                s_rhll4 * w4 * R4)
+
+        d_flux = d_flux_hhl - 0.5 * d_flux_rhll_dissipation
+
+        # debug
+        if ti.static(self.is_debug):
+            print('ms', r, rho_m, v_m, p_m, a_m, h_m)
+            print('normal', v_normal, a_normal, dv_normal)
+            print('eigen', eig1, eig2, eig3, eig4)
+            print('lrnormal', v_normal_l, v_normal_r, rho_v_normal_l, rho_v_normal_r)
+            print('flux', d_flux_l, d_flux_r, d_flux_hhl, d_flux_rhll_dissipation, d_flux)
+
+        ### TODO: minus 1.0?
+        return d_flux # no -1.0* ?
+
 
     @ti.func
     def calc_flux_advect(self):
@@ -898,9 +1104,12 @@ class BlockSolver:
                 flux = self.calc_van_leer_flux(self.q[I],
                                                self.q[I + offset_right],
                                                self.vec_surf[I, 0])
-            else:
+            elif ti.static(self.convect_method == 1): # roe modified (TODO: validation)
                 flux = self.calc_roe_flux(self.q[I], self.q[I + offset_right],
                                           self.vec_surf[I, 0])
+            else: # 2, Roe-RHLL
+                flux = self.calc_roe_rhll_flux(self.q[I], self.q[I + offset_right],
+                                                self.vec_surf[I, 0])
             # TODO: maybe we can check if is adding to virtual element, but bcs will update them later, no need?
             self.flux[I] += flux
             self.flux[I + offset_right] -= flux
@@ -912,8 +1121,11 @@ class BlockSolver:
                 flux = self.calc_van_leer_flux(self.q[I],
                                                self.q[I + offset_top],
                                                self.vec_surf[I, 1])
-            else:
+            if ti.static(self.convect_method == 1):  # roe modified
                 flux = self.calc_roe_flux(self.q[I], self.q[I + offset_top],
+                                          self.vec_surf[I, 1])
+            else:
+                flux = self.calc_roe_rhll_flux(self.q[I], self.q[I + offset_top],
                                           self.vec_surf[I, 1])
             # TODO: maybe we can check if is adding to virtual element, but bcs will update them later, no need?
             self.flux[I] += flux
