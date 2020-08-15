@@ -23,7 +23,7 @@ Current Features:
 - Compressible fluid simulation with shockwave catching capabilities and heat transfer
 - Euler and Navier-Stokes equations (`WIP, laminar diffusion coefficients, validation still needed with test cases`)
 - Convection items suitable for shockwave catching using Godnuv type Riemann solvers: **van Leer / modified Roe / Roe-RHLL methods[1]** (`Validation still needed`)
-- Physical quantities on the cell surface and graidents are caculation by interpolation / cell integration with adjacent cells (`Currently simple 1st to quasi-2nd order`)
+- Physical quantities on the cell surface and gradients are calculated by interpolation/cell-integration with adjacent cells (`Currently simple 1st to quasi-2nd order`)
 - RK3 time marching
 - Dual time marching[2] with RK3 (`WIP, convergence problems exist and validations are needed`)
 - One virtual votexes on every block edge for boundary calculations
@@ -66,7 +66,7 @@ The case also utilizes circular shaped grid mesh in favor of FVM method, a cutti
     <img height="300px" src="./docs/cylinder.png" />
 </div>
 
-The shock wave simulated with Roe-RLHH method is showing appropriate shock wave shape and carbuncle-free features. `More quantitative analysis is needed.`
+The shock wave simulated with Roe-RHLL method is showing appropriate shock wave shape and carbuncle-free features. `More quantitative analysis is needed.`
 
 ### forward-facing step
 
