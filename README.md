@@ -40,6 +40,8 @@ The input configurations can be written case by case in script files, examples a
 
 *TODO: more descriptions*
 
+_NOTICE: Solver folder and non-multiblock cases are inititial versions. These are now deprecated in favor of multi block versions. They will be removed soon._
+
 ## Test cases
 
 ### supersonic wedge
