@@ -78,16 +78,16 @@ The case is also drawn from [3]. The simulation configurations and density conto
 The case is used as validations for shockwave interactions(reflections against wall). And it also covers multi-block issues using two rectangular grid blocks.
 
 <div align="center">
-    <img height="200px" src="./docs/forwardstep.gif" />
-    <img height="200px" src="./docs/forwardstep_ma.png" />
+    <img height="180px" src="./docs/forwardstep.gif" />
+    <img height="180px" src="./docs/forwardstep_ma.png" />
 </div>
 
 The result shows appropriate shock shapes using van Leer method. `More validations are needed as both Roe-RHLL and dual-time marching is caught in convergence problems. And further precise time-related qunatitative analysis is needed`
 
 ## Future work
 
-- Bug fixes and failures in precise equation implementations
-- Can Taichi's autodiff feature be applicated on FVM/
+- Bug fixes and equation implementations checks
+- Can Taichi's autodiff feature be applicated on FVM?
 - Higher order method and interpolations with possible 2 virtual vortexs on the surface, for example
 - Unstructured mesh FVM
 - Multigrid/multi-resolution, implicit time marching
