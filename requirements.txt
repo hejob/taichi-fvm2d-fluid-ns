@@ -1,0 +1,3 @@
+taichi>=0.6.25
+matplotlib
+numpy
