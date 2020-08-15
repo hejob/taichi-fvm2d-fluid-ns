@@ -22,10 +22,10 @@ Current Features:
 - `2D structured mesh`
 - Compressible fluid simulation with shockwave catching capabilities and heat transfer
 - Euler and Navier-Stokes equations (`WIP, laminar diffusion coefficients, validation still needed with test cases`)
-- Convection items suitable for shockwave catching using Godnuv type Riemann solvers: **van Leer / modified Roe / Roe-RHLL methods** (`Validation still needed`)
+- Convection items suitable for shockwave catching using Godnuv type Riemann solvers: **van Leer / modified Roe / Roe-RHLL methods[1]** (`Validation still needed`)
 - Physical quantities on the cell surface and graidents are caculation by interpolation / cell integration with adjacent cells (`Currently simple 1st to quasi-2nd order`)
 - RK3 time marching
-- Dual time marching with RK3 (`WIP, convergence problems exist and validations are needed`)
+- Dual time marching[2] with RK3 (`WIP, convergence problems exist and validations are needed`)
 - One virtual votexes on every block edge for boundary calculations
 - Multiple types of boundary conditions: supersonic inlet/outlet, symmetry, non-slip/slip wall
 - Interconnection boundary data transfer between block surfaces
