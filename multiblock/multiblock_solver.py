@@ -157,6 +157,9 @@ class MultiBlockSolver:
                         output_line_plot_var=output_line_plot_var,
                         display_gif_files=display_gif_files)
 
+        ## custom function injections for various custom simulations
+        self.custom_init_func = None
+
     ########################
     # Call this before solve to set boundary connections
     # We do not use array clone here
@@ -193,6 +196,12 @@ class MultiBlockSolver:
         for solver in self.solvers:
             solver.is_debug = is_debug
 
+    ########################
+    # Set custom simulations
+    def set_custom_simulations(self, custom_init_func):
+        self.custom_init_func = custom_init_func
+        for solver in self.solvers:
+            solver.set_custom_simulations(custom_init_func)
 
     #--------------------------------------------------------------------------
     #  Inter-Block Connection Boundaries Conditions

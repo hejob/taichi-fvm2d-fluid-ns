@@ -99,8 +99,10 @@ class BlockSolver:
         ##          value item in bc_q_values array
         self.bc_info = []
         self.bc_q_values = []
-
         ## connections are inter-blocked, govened by Multiblock Solver
+
+        ## custom function injections for various custom simulations
+        self.custom_init_func = None
 
     ###############################
     # Taichi tensors allocations
@@ -252,6 +254,10 @@ class BlockSolver:
         self.bc_info = bc[:]
         self.bc_q_values = bc_q_values[:]
 
+    ########################
+    # Set custom simulations
+    def set_custom_simulations(self, custom_init_func):
+        self.custom_init_func = custom_init_func
 
     #--------------------------------------------------------------------------
     #  Preparations before main simulation loop
@@ -331,6 +337,8 @@ class BlockSolver:
             #     1.0 * self.e0,
             # ])
 
+    @ti.kernel
+    def init_w(self):
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
             self.w[I] = self.q[I]
             if ti.static(self.is_dual_time):
@@ -353,6 +361,11 @@ class BlockSolver:
             self.bc(-1)
 
         self.init_q()
+
+        if not self.custom_init_func is None:
+            self.custom_init_func(self)
+
+        self.init_w()
 
     #--------------------------------------------------------------------------
     #  Boundary Conditions (BC)
