@@ -241,22 +241,26 @@ class MultiBlockSolver:
         return (pos_start, direction_offset, bc_offset)
 
     @ti.kernel
-    def bc_connection(self, solver: ti.template(), solver_other: ti.template(), bc_conn: ti.template(), bc_other: ti.template(), num: ti.template(), stage: ti.template()):
-        conn_pos_start, conn_direction_offset, conn_offset = self.calc_bc_connection_positions(bc_conn, solver.ni, solver.nj)
-        other_pos_start, other_direction_offset, other_offset = self.calc_bc_connection_positions(bc_other, solver_other.ni, solver_other.nj)
+    def bc_connection(self, solver: ti.template(), solver_other: ti.template(), bc_conn_info: ti.template(), bc_other_info: ti.template(), num: ti.template(), stage: ti.template()):
+        # bc_conn_info, bc_other_info: (start index, march direction, surface direction, surface index (start/end)) with block index removed
+        conn_pos_start, conn_direction_offset, conn_offset = self.calc_bc_connection_positions(bc_conn_info, solver.ni, solver.nj)
+        other_pos_start, other_direction_offset, other_offset = self.calc_bc_connection_positions(bc_other_info, solver_other.ni, solver_other.nj)
         for i in range(ti.static(num)):
-            bc_I = conn_pos_start + i * conn_direction_offset + conn_offset  # bc on this side
+            I = conn_pos_start + i * conn_direction_offset
+            I_bc = I + conn_offset  # bc on this side
             I_other = other_pos_start + i * other_direction_offset          # real cell on other side
 
             if ti.static(stage == -1):
-                solver.elem_area[bc_I] = solver_other.elem_area[I_other]
-                solver.elem_width[bc_I] = solver_other.elem_width[I_other]
+                solver.elem_area[I_bc] = solver_other.elem_area[I_other]
+                solver.elem_width[I_bc] = solver_other.elem_width[I_other]
             elif ti.static(stage == 0):
-                solver.q[bc_I] = solver_other.q[I_other]
+                solver.q[I_bc] = solver_other.q[I_other]
             elif ti.static(stage == 1):
                 if ti.static(self.is_viscous):
-                    solver.gradient_v_c[bc_I] = solver_other.gradient_v_c[I_other]
-                    solver.gradient_temp_c[bc_I] = solver_other.gradient_temp_c[I_other]
+                    solver.gradient_v_c[I_bc] = solver_other.gradient_v_c[I_other]
+                    solver.gradient_temp_c[I_bc] = solver_other.gradient_temp_c[I_other]
+            elif ti.static(stage == 10):
+                solver.bc_connection_advect_flux_cell(I, I_bc, bc_conn_info[2], bc_conn_info[3]) # cell index, surf dir, surf end
             # else: Exception (not in kernel), asset?
 
     ###############
@@ -273,6 +277,10 @@ class MultiBlockSolver:
         for (bc_conn, bc_other, num) in self.bc_connection_info:
             block = bc_conn[0]
             block_other = bc_other[0]
+            # if (stage == 10):
+                # print()
+                # print(bc_conn, bc_other)
+                # print()
             self.bc_connection(self.solvers[block], self.solvers[block_other], bc_conn[1:], bc_other[1:], num, stage)
 
 
@@ -308,6 +316,9 @@ class MultiBlockSolver:
 
             for solver in self.solvers:
                 solver.flux_advect()
+                solver.bc(10)   # advect flux on bc
+                # solver.bc_fake(10)
+            self.bc_interblock(10)
 
             for solver in self.solvers:
                 solver.time_march_rk3(i)
@@ -342,6 +353,8 @@ class MultiBlockSolver:
 
                 for solver in self.solvers:
                     solver.flux_advect()
+                    solver.bc(10)   # advect flux on bc
+                self.bc_interblock(10)
 
                 for solver in self.solvers:
                     solver.time_march_rk3_dual(i)
@@ -369,6 +382,8 @@ class MultiBlockSolver:
 
         for solver in self.solvers:
             solver.flux_advect()
+            solver.bc(10)   # advect flux on bc
+        self.bc_interblock(10)
 
         for solver in self.solvers:
             solver.time_march_rk3_dual_last()        

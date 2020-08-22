@@ -21,11 +21,14 @@ e0 = p0 / (gamma - 1.0) + 0.5 * 1.0
 ## sizes
 ni = 240             # points on the cylinder surface
 nj = 116            # points in normal direction
+# ni = 40
+# nj = 24
 radius = 1.0        # cylinder radius (use as dimensionless unit)
 # length_wall = 0.05  # cell height nearest wall
 # stretch_rate = 1.005 # cell stretch rate
 length_wall = 0.005  # cell height nearest wall
 stretch_rate = 1.03 # cell stretch rate
+# stretch_rate = 1.2
 
 
 @ti.func
@@ -73,7 +76,7 @@ solver = MultiBlockSolver(
     n_blocks=1,
     block_dimensions=[(ni, nj)],
     ma0=ma0,
-    dt=1e-3,
+    dt=5e-3,
     convect_method=2,
     is_viscous=False,
     temp0_raw=273,
@@ -82,9 +85,9 @@ solver = MultiBlockSolver(
     display_field=True,
     display_value_min=0.0,
     display_value_max=3.0,
-    output_line=True,
+    output_line=False,
     output_line_ends=((-1.0 + width / 2.0, 1.1 + height / 2.0), (1.0 + width / 2.0, 1.1 + height / 2.0)),
-    output_line_num_points=50,
+    output_line_num_points=5,
     output_line_var=7,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
     output_line_plot_var=0)  # output along x-axis on plot
 
@@ -105,8 +108,10 @@ bc_array = [
     ## move to bc connection
     # (2, 1, nj + 1, 0, 0, None),     # left interconnection, upper side, symmetry for now
     # (2, 1, nj + 1, 0, 1, None),     # left interconnection, lower side, symmetry for now
+    # (0, 1, nj + 1, 0, 0, 0),     # left interconnection, upper side, symmetry for now
+    # (0, 1, nj + 1, 0, 1, 0),     # left interconnection, lower side, symmetry for now
 
-    (3, 1, ni + 1, 1, 0, None),       # wall cylinder
+    (4, 1, ni + 1, 1, 0, None),       # wall cylinder
 
     (0, 1, ni // 4 + 1, 1, 1, 0),  # far-field, left upper side, inlet for left half
     (0, ni + 2 - ni // 4, ni + 1, 1, 1, 0),  # far-field, left lower side, inlet for left half
@@ -124,7 +129,7 @@ solver.set_bc_connection(bc_connection_array)
 
 solver.set_display_options(
         display_color_map=1,
-        display_steps=10,
+        display_steps=1,
         display_show_grid=False,
         display_show_xc=False,
         display_show_velocity=False,

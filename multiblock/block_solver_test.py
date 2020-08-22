@@ -415,12 +415,12 @@ class BlockSolver:
     def calc_bc_surf_range(self, dir, end) -> ti.template():
         offset_surf_range = ti.Vector([0, 0])
         if dir == 0:  #x
-            if end == 1:  #right
+            if end == 0:  #right
                 offset_surf_range = ti.Vector([0, 0])
             else:
                 offset_surf_range = ti.Vector([-1, 0])
         else:
-            if end == 1:  #right
+            if end == 0:  #right
                 offset_surf_range = ti.Vector([0, 0])
             else:
                 offset_surf_range = ti.Vector([0, -1])
@@ -495,14 +495,10 @@ class BlockSolver:
                 rho_vel = ti.Vector([self.q[I][1], self.q[I][2]])
                 rho_vn = rho_vel.dot(surf_between_dir)
                 rho_vel_slip = rho_vel - rho_vn * surf_between_dir
-                rho_vel_rotate = rho_vel.norm() * rho_vel_slip.normalized()
-                # rho_vel_rotate = rho_vel * 1.0
                 q_bc = ti.Vector([
                                     rho,
-                                    # rho_vel_slip[0], rho_vel_slip[1],
-                                    # self.q[I][3] - 0.5 * (rho_vn**2) / rho,
-                                    rho_vel_rotate[0], rho_vel_rotate[1],
-                                    self.q[I][3]
+                                    rho_vel_slip[0], rho_vel_slip[1],
+                                    self.q[I][3] - 0.5 * (rho_vn**2) / rho,
                                 ])
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
 
@@ -639,10 +635,7 @@ class BlockSolver:
                     self.gradient_temp_c[bc_I] = 2.0 * self.gradient_temp_c[I] - self.gradient_temp_c[int_I]
             elif stage == 10:
                 ### surf flux, velocity is 0
-                # TODO: use interpolation will cause error?
-                # q_bc = ti.max(0.0, 1.5 * self.q[I] - 0.5 * self.q[int_I])
-                # q_bc = ti.max(0.0, 2 * self.q[I] - self.q[int_I])
-                q_bc = self.q[I]
+                q_bc = ti.max(0.0, 1.5 * self.q[I] - 0.5 * self.q[int_I])
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
 
     @ti.kernel
@@ -751,9 +744,11 @@ class BlockSolver:
                 self.bc_wall_noslip(rng0, rng1, direction, start_or_end, stage)
             elif bc_type == 4:
                 ## slip wall
-                # if stage == 10:
+                if stage == 10:
                     # self.bc_fake_calc(rng0, rng1, direction, start_or_end, stage)
-                self.bc_wall_slip(rng0, rng1, direction, start_or_end, stage)
+                    self.bc_wall_slip(rng0, rng1, direction, start_or_end, stage)
+                else:
+                    self.bc_wall_slip(rng0, rng1, direction, start_or_end, stage)
             elif bc_type == 10:
                 ## subsonic inlet
                 q_bc_item = self.bc_q_values[q_index]
@@ -873,7 +868,7 @@ class BlockSolver:
                     # rho_u_normal * (et + p_on_rho)
                     # q[3] * u_normal_value + rho_u_normal * p_on_rho
                     rho_u_normal * h
-                ]) * vec_size * (1.0) # 1.0 # vec_size
+                ]) # * vec_size * (1.0) # 1.0 # vec_size
 
     @ti.func
     def util_ext_product_scalar_vec2d(self, q,
@@ -1243,7 +1238,6 @@ class BlockSolver:
         for I in ti.grouped(ti.ndrange(*self.range_surfs_ij_i_internal)):
         # for I in ti.grouped(ti.ndrange(*self.range_surfs_ij_i)):
             offset_right = ti.Vector([1, 0])
-            vec_size = self.vec_surf[I, 0].norm()
             if ti.static(self.convect_method == 0):  # van Leer
                 flux = self.calc_van_leer_flux(self.q[I],
                                                self.q[I + offset_right],
@@ -1255,14 +1249,13 @@ class BlockSolver:
                 flux = self.calc_roe_rhll_flux(self.q[I], self.q[I + offset_right],
                                                 self.vec_surf[I, 0])
             # TODO: maybe we can check if is adding to virtual element, but bcs will update them later, no need?
-            self.flux[I] += flux * vec_size
-            self.flux[I + offset_right] -= flux * vec_size
+            self.flux[I] += flux
+            self.flux[I + offset_right] -= flux
 
         ## y dir to the top, flux across the same surf is positive/negative into left/right cells respectively
         for I in ti.grouped(ti.ndrange(*self.range_surfs_ij_j_internal)):
         # for I in ti.grouped(ti.ndrange(*self.range_surfs_ij_j)):
             offset_top = ti.Vector([0, 1])
-            vec_size = self.vec_surf[I, 1].norm()
             if ti.static(self.convect_method == 0):  # van Leer
                 flux = self.calc_van_leer_flux(self.q[I],
                                                self.q[I + offset_top],
@@ -1274,8 +1267,8 @@ class BlockSolver:
                 flux = self.calc_roe_rhll_flux(self.q[I], self.q[I + offset_top],
                                           self.vec_surf[I, 1])
             # TODO: maybe we can check if is adding to virtual element, but bcs will update them later, no need?
-            self.flux[I] += flux * vec_size
-            self.flux[I + offset_top] -= flux * vec_size
+            self.flux[I] += flux
+            self.flux[I + offset_top] -= flux
 
     @ti.kernel
     def flux_advect(self):
@@ -1293,13 +1286,12 @@ class BlockSolver:
     ## (calculate as normal internal surf using values of virtual vortexes)
     @ti.func
     def bc_connection_advect_flux_cell(self, I: ti.template(), I_bc: ti.template(), dir: ti.template(), end: ti.template()): # cell index, surf dir, surf end
+        # print('conn', I, I_bc, dir, end)
         # TODO: offset_surf_range, normal +/-1 are calculated for every call in one bc ranges, can reduce to once?
         offset_surf_range = self.calc_bc_surf_range(dir, end)
         surf_between_normal = self.vec_surf[I + offset_surf_range, dir]
-        vec_size = surf_between_normal.norm()
         if ti.static(end == 0):
             surf_between_normal *= -1.0
-        # print('conn', I, I_bc, I + offset_surf_range, dir, end, surf_between_normal)
 
         flux = ti.Vector([0.0, 0.0, 0.0, 0.0])
         if ti.static(self.convect_method == 0):  # van Leer
@@ -1309,7 +1301,7 @@ class BlockSolver:
         else: # 2, Roe-RHLL
             flux = self.calc_roe_rhll_flux(self.q[I], self.q[I_bc], surf_between_normal)
 
-        self.flux[I] += flux * vec_size # one side only, across outside normal direction
+        self.flux[I] += flux  # one side only, across outside normal direction
 
 
     @ti.kernel

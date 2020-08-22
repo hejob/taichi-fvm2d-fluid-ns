@@ -433,11 +433,11 @@ class Drawer:
 
     def display_draw_arrow(self, xc, uv, coef):
         p0 = self.scale_to_screen(xc)
-        p1 = self.scale_to_screen(self.line_arrow(xc, uv, 0.02))
+        p1 = self.scale_to_screen(self.line_arrow(xc, uv, coef))
         su1 = self.util_rotate_vector(uv, 140)
         su2 = self.util_rotate_vector(uv, -140)
-        p2 = self.line_arrow(p1, su1, 0.02 * 0.3)
-        p3 = self.line_arrow(p1, su2, 0.02 * 0.3)
+        p2 = self.line_arrow(p1, su1, coef * 0.1)
+        p3 = self.line_arrow(p1, su2, coef * 0.1)
         self.gui.line(p0, p1, radius=1, color=0xcc4400)
         self.gui.line(p1, p2, radius=1, color=0xcc4400)
         self.gui.line(p1, p3, radius=1, color=0xcc4400)
@@ -450,7 +450,7 @@ class Drawer:
                     u = solver.q[i, j][1] / solver.q[i, j][0]
                     v = solver.q[i, j][2] / solver.q[i, j][0]
                     xc = (solver.xc[i, j][0], solver.xc[i, j][1])
-                    self.display_draw_arrow(xc, (u, v), 0.01)
+                    self.display_draw_arrow(xc, (u, v), 0.05)
     
 
     def init_display(self):
