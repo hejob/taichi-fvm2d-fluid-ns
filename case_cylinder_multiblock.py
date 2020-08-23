@@ -2,9 +2,9 @@ import taichi as ti
 import numpy as np
 import time
 
-from multiblock.multiblock_solver import MultiBlockSolver
-from multiblock.block_solver import BlockSolver
-from multiblock.drawer import Drawer
+from multiblocksolver.multiblock_solver import MultiBlockSolver
+from multiblocksolver.block_solver import BlockSolver
+from multiblocksolver.drawer import Drawer
 
 
 real = ti.f32
@@ -73,7 +73,7 @@ solver = MultiBlockSolver(
     n_blocks=1,
     block_dimensions=[(ni, nj)],
     ma0=ma0,
-    dt=1e-4,
+    dt=1e-3,
     convect_method=2,
     is_viscous=False,
     temp0_raw=273,
@@ -131,7 +131,7 @@ solver.set_display_options(
         display_show_velocity_skip=(4,4),
         display_show_surface=False,
         display_show_surface_norm=False,
-        display_gif_files=True
+        display_gif_files=False
     )
 
 ### start simulation loop

@@ -157,6 +157,9 @@ class MultiBlockSolver:
                         output_line_plot_var=output_line_plot_var,
                         display_gif_files=display_gif_files)
 
+        ## custom function injections for various custom simulations
+        self.custom_init_func = None
+
     ########################
     # Call this before solve to set boundary connections
     # We do not use array clone here
@@ -174,6 +177,7 @@ class MultiBlockSolver:
                             display_show_velocity_skip=(4, 4),
                             display_show_surface=False,
                             display_show_surface_norm=False,
+                            output_monitor_points=[],
                             display_gif_files=False):
         self.display_steps = display_steps
         self.drawer.set_display_options(
@@ -184,6 +188,7 @@ class MultiBlockSolver:
             display_show_velocity_skip=display_show_velocity_skip,
             display_show_surface=display_show_surface,
             display_show_surface_norm=display_show_surface_norm,
+            output_monitor_points=output_monitor_points,
             display_gif_files=display_gif_files)
 
     ###########
@@ -193,6 +198,12 @@ class MultiBlockSolver:
         for solver in self.solvers:
             solver.is_debug = is_debug
 
+    ########################
+    # Set custom simulations
+    def set_custom_simulations(self, custom_init_func):
+        self.custom_init_func = custom_init_func
+        for solver in self.solvers:
+            solver.set_custom_simulations(custom_init_func)
 
     #--------------------------------------------------------------------------
     #  Inter-Block Connection Boundaries Conditions
@@ -231,23 +242,63 @@ class MultiBlockSolver:
 
         return (pos_start, direction_offset, bc_offset)
 
+    # offset to calc bc surf's index
+    # NOTICE this is surf's plus direction, not always points to the bc side (positive/negative)
+    # surf_between_normal = self.vec_surf[I + offset_surf_range, dir]
+    @ti.func
+    def calc_bc_surf_range(self, dir, end) -> ti.template():
+        offset_surf_range = ti.Vector([0, 0])
+        if dir == 0:  #x
+            if end == 1:  #right
+                offset_surf_range = ti.Vector([0, 0])
+            else:
+                offset_surf_range = ti.Vector([-1, 0])
+        else:
+            if end == 1:  #right
+                offset_surf_range = ti.Vector([0, 0])
+            else:
+                offset_surf_range = ti.Vector([0, -1])
+        return offset_surf_range
+
     @ti.kernel
-    def bc_connection(self, solver: ti.template(), solver_other: ti.template(), bc_conn: ti.template(), bc_other: ti.template(), num: ti.template(), stage: ti.template()):
-        conn_pos_start, conn_direction_offset, conn_offset = self.calc_bc_connection_positions(bc_conn, solver.ni, solver.nj)
-        other_pos_start, other_direction_offset, other_offset = self.calc_bc_connection_positions(bc_other, solver_other.ni, solver_other.nj)
+    def bc_connection(self, solver: ti.template(), solver_other: ti.template(), bc_conn_info: ti.template(), bc_other_info: ti.template(), num: ti.template(), stage: ti.template()):
+        # bc_conn_info, bc_other_info: (start index, march direction, surface direction, surface index (start/end)) with block index removed
+        conn_pos_start, conn_direction_offset, conn_offset = self.calc_bc_connection_positions(bc_conn_info, solver.ni, solver.nj)
+        other_pos_start, other_direction_offset, other_offset = self.calc_bc_connection_positions(bc_other_info, solver_other.ni, solver_other.nj)
+
+        offset_surf_range = self.calc_bc_surf_range(bc_conn_info[2], bc_conn_info[3])
+        conn_dir = bc_conn_info[2]
+        other_offset_surf_range = self.calc_bc_surf_range(bc_other_info[2], bc_other_info[3])
+        other_conn_dir = bc_other_info[2]
+
         for i in range(ti.static(num)):
-            bc_I = conn_pos_start + i * conn_direction_offset + conn_offset  # bc on this side
+            I = conn_pos_start + i * conn_direction_offset
+            I_bc = I + conn_offset  # bc on this side
             I_other = other_pos_start + i * other_direction_offset          # real cell on other side
 
+            I_surf = I + offset_surf_range
+            I_surf_other = I_other + other_offset_surf_range
+
             if ti.static(stage == -1):
-                solver.elem_area[bc_I] = solver_other.elem_area[I_other]
-                solver.elem_width[bc_I] = solver_other.elem_width[I_other]
+                solver.elem_area[I_bc] = solver_other.elem_area[I_other]
+                solver.elem_width[I_bc] = solver_other.elem_width[I_other]
             elif ti.static(stage == 0):
-                solver.q[bc_I] = solver_other.q[I_other]
+                solver.q[I_bc] = solver_other.q[I_other]
             elif ti.static(stage == 1):
-                if ti.static(self.is_viscous):
-                    solver.gradient_v_c[bc_I] = solver_other.gradient_v_c[I_other]
-                    solver.gradient_temp_c[bc_I] = solver_other.gradient_temp_c[I_other]
+                # if ti.static(self.is_viscous):
+                solver.gradient_v_c[I_bc] = solver_other.gradient_v_c[I_other]
+                solver.gradient_temp_c[I_bc] = solver_other.gradient_temp_c[I_other]
+            elif ti.static(stage == 10):
+                solver.bc_connection_advect_flux_cell(I, I_bc, bc_conn_info[2], bc_conn_info[3]) # cell index, surf dir, surf end
+            elif ti.static(stage == 20):
+                solver.v_c[I_bc] = solver_other.v_c[I_other]
+                solver.temp_c[I_bc] = solver_other.temp_c[I_other]
+            elif ti.static(stage == 21):
+                solver.v_surf[I_surf, conn_dir] = solver_other.v_surf[I_surf_other, other_conn_dir]
+                solver.temp_surf[I_surf, conn_dir] = solver_other.temp_surf[I_surf_other, other_conn_dir]
+            elif ti.static(stage == 22):
+                solver.gradient_v_surf[I_surf, conn_dir] = solver_other.gradient_v_surf[I_surf_other, other_conn_dir]
+                solver.gradient_temp_surf[I_surf, conn_dir] = solver_other.gradient_temp_surf[I_surf_other, other_conn_dir]
             # else: Exception (not in kernel), asset?
 
     ###############
@@ -264,6 +315,10 @@ class MultiBlockSolver:
         for (bc_conn, bc_other, num) in self.bc_connection_info:
             block = bc_conn[0]
             block_other = bc_other[0]
+            # if (stage == 10):
+                # print()
+                # print(bc_conn, bc_other)
+                # print()
             self.bc_connection(self.solvers[block], self.solvers[block_other], bc_conn[1:], bc_other[1:], num, stage)
 
 
@@ -286,19 +341,38 @@ class MultiBlockSolver:
 
             for solver in self.solvers:
                 solver.clear_flux()
-                if self.is_viscous:
-                    # self.flux_diffusion()
-                    solver.flux_diffusion_init()
-                    solver.bc(1)
-
-            self.bc_interblock(1)
-
+            
             if self.is_viscous:
                 for solver in self.solvers:
-                    solver.flux_diffusion_calc()
+                    # self.flux_diffusion()
+                    solver.calc_u_temp_center()
+                    # solver.bc(20)
+                self.bc_interblock(20)
+
+                for solver in self.solvers:
+                    solver.flux_diffusion_interp_qsurf()
+                    solver.bc(21) # set q on surf
+                self.bc_interblock(21)
+
+                for solver in self.solvers:
+                    solver.flux_diffusion_integrate_gradient_center()
+                    solver.bc(1) # set gradient on virtual center
+                self.bc_interblock(1)
+
+                for solver in self.solvers:
+                    solver.flux_diffusion_calc_gradient_surf()
+                    solver.bc(22) # set gradient on surf
+                self.bc_interblock(22)
+
+                for solver in self.solvers:
+                    solver.calc_flux_diffusion()
+                    # TODO: be connections bc 1/20/21/22 in multiblock
 
             for solver in self.solvers:
                 solver.flux_advect()
+                solver.bc(10)   # advect flux on bc
+                ## solver.bc_fake(10)
+            self.bc_interblock(10)
 
             for solver in self.solvers:
                 solver.time_march_rk3(i)
@@ -309,7 +383,7 @@ class MultiBlockSolver:
         for solver in self.solvers:
             solver.time_save_q_dual()
 
-        for _ in range(2):
+        for _ in range(1):
             for solver in self.solvers:
                 solver.time_save_q_dual_sub()
             for i in range(3):
@@ -333,6 +407,8 @@ class MultiBlockSolver:
 
                 for solver in self.solvers:
                     solver.flux_advect()
+                    solver.bc(10)   # advect flux on bc
+                self.bc_interblock(10)
 
                 for solver in self.solvers:
                     solver.time_march_rk3_dual(i)
@@ -360,6 +436,8 @@ class MultiBlockSolver:
 
         for solver in self.solvers:
             solver.flux_advect()
+            solver.bc(10)   # advect flux on bc
+        self.bc_interblock(10)
 
         for solver in self.solvers:
             solver.time_march_rk3_dual_last()        
@@ -418,6 +496,7 @@ class MultiBlockSolver:
                     self.solvers[block].t = self.t
 
             ## TODO: more useful information to console
+            print()
             print(f't: {self.t:.03f}')
             if self.display_field:
                 self.drawer.display(step_index)

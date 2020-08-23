@@ -7,9 +7,9 @@
 import taichi as ti
 import time
 
-from multiblock.multiblock_solver import MultiBlockSolver
-from multiblock.block_solver import BlockSolver
-from multiblock.drawer import Drawer
+from multiblocksolver.multiblock_solver import MultiBlockSolver
+from multiblocksolver.block_solver import BlockSolver
+from multiblocksolver.drawer import Drawer
 
 ##################
 # TODO: is multiple taichi instance ok?
@@ -59,7 +59,7 @@ if __name__ == '__main__':
         n_blocks=1,
         block_dimensions=[(ni, nj)],
         ma0=ma0,
-        dt=1e-5,
+        dt=1e-3,
         convect_method=2,
         is_viscous=True,
         temp0_raw=273,
@@ -105,7 +105,7 @@ if __name__ == '__main__':
             display_show_velocity_skip=(16,8),
             display_show_surface=False,
             display_show_surface_norm=False,
-            display_gif_files=True
+            display_gif_files=False
         )
 
     ### start simulation loop

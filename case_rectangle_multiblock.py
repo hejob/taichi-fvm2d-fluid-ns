@@ -7,9 +7,9 @@
 import taichi as ti
 import time
 
-from multiblock.multiblock_solver import MultiBlockSolver
-from multiblock.block_solver import BlockSolver
-from multiblock.drawer import Drawer
+from multiblocksolver.multiblock_solver import MultiBlockSolver
+from multiblocksolver.block_solver import BlockSolver
+from multiblocksolver.drawer import Drawer
 
 ##################
 # TODO: is multiple taichi instance ok?
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     gamma = 1.4
     ma0 = 0.3
     # re0 = 1.225 * (ma0 * 343) * 1.0 / (1.81e-5)
-    re0 = 1e+4
+    re0 = 1e+3
     p0 = 1.0 / gamma / ma0 / ma0
     e0 = p0 / (gamma - 1.0) + 0.5 * 1.0
 
@@ -57,9 +57,9 @@ if __name__ == '__main__':
         n_blocks=1,
         block_dimensions=[(ni, nj)],
         ma0=ma0,
-        dt=5e-7,
-        convect_method=2,
-        is_viscous=False,
+        dt=5e-4,
+        convect_method=0,
+        is_viscous=True,
         temp0_raw=273,
         re0=re0,
         gui_size=(800, 160),
@@ -70,7 +70,7 @@ if __name__ == '__main__':
         output_line_ends=((1.4, 0.02), (1.4, 0.38)),
         output_line_num_points=40,
         output_line_var=1,  # Mach number. 0~7: rho/u/v/et/uu/p/a/ma
-        output_line_plot_var=0)  # output along x-axis on plot
+        output_line_plot_var=1)  # output along x-axis on plot
 
 
     ### generate grids in Solver's x tensor
@@ -82,12 +82,15 @@ if __name__ == '__main__':
     i_bc = int(0.2 * ni // 1) + 1
 
     bc_q_values=[
-        (1.0, 1.0 * 1.0, 1.0 * 0.0, 1.0 * e0)
+        (1.0, 1.0 * 1.0, 1.0 * 0.0, 1.0 * e0),
+        (1.0, 1.0 * 1.0, 1.0 * 0.0, 0.8 * e0)
     ]
 
     bc_array = [
         (10, 1, nj + 1, 0, 0, 0),         # left subsonic inlet
-        (11, 1, nj + 1, 0, 1, 0),         # right, subsonic outlet
+        # (0, 1, nj + 1, 0, 0, 0),         # left supersonic inlet
+        # (11, 1, nj + 1, 0, 1, 0),         # right, subsonic outlet
+        (1, 1, nj + 1, 0, 1, 1),         # right, subsonic outlet
         (3, 1, ni + 1, 1, 0, None),       # down, wall
         (3, 1, ni + 1, 1, 1, None),       # up, wall
         # (2, 1, ni + 1, 1, 0, None),     # down, sym
@@ -100,9 +103,11 @@ if __name__ == '__main__':
             display_show_grid=False,
             display_show_xc=False,
             display_show_velocity=True,
-            display_show_velocity_skip=(4, 2),
+            display_show_velocity_skip=(8, 1),
             display_show_surface=False,
-            display_show_surface_norm=False
+            display_show_surface_norm=False,
+            # output_monitor_points=[(0, 0, nj // 2), (0, 1, nj // 2), (0, 2, nj // 2)]   ## for debug on inlet
+            output_monitor_points=[(0, ni // 2, 0), (0, ni // 2, 1), (0, ni // 2, 2), (0, ni // 2, 3), (0, ni // 2, 4), (0, ni // 2, 5), (0, ni // 2, 6)]  ## for debug on odd-even oscillation phenomena
         )
 
     ### start simulation loop
