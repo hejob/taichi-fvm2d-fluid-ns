@@ -451,10 +451,23 @@ class BlockSolver:
                 if ti.static(self.is_viscous):
                     self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
                     self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
-            elif stage == 10:
-                ### surf flux
+            elif stage == 10: ### surf flux
                 q_bc = ti.Vector([q0, q1, q2, q3])
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
+            elif stage == 20: ### uvt
+                if ti.static(self.is_viscous):
+                    uvt = self.q_to_primitive_u_t(ti.Vector([q0, q1, q2, q3]))
+                    self.v_c[bc_I] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_c[bc_I] = uvt[2]
+            elif stage == 21: ### uvt on surf
+                if ti.static(self.is_viscous):
+                    uvt = self.q_to_primitive_u_t(ti.Vector([q0, q1, q2, q3]))
+                    self.v_surf[I + offset_surf_range, dir] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_surf[I + offset_surf_range, dir] = uvt[2]
+            elif stage == 22: ### uvt gradient on surf
+                if ti.static(self.is_viscous):
+                    self.gradient_v_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_temp_c[I]
 
     @ti.kernel
     def bc_symmetry(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -505,6 +518,30 @@ class BlockSolver:
                                     self.q[I][3]
                                 ])
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
+            elif stage == 21: ### uvt on surf
+                if ti.static(self.is_viscous):
+                    rho = self.q[I][0]
+                    rho_vel = ti.Vector([self.q[I][1], self.q[I][2]])
+                    rho_vn = rho_vel.dot(surf_between_dir)
+                    rho_vel_slip = rho_vel - rho_vn * surf_between_dir
+                    rho_vel_rotate = rho_vel.norm() * rho_vel_slip.normalized()
+                    # rho_vel_rotate = rho_vel * 1.0
+                    q_bc = ti.Vector([
+                                        rho,
+                                        # rho_vel_slip[0], rho_vel_slip[1],
+                                        # self.q[I][3] - 0.5 * (rho_vn**2) / rho,
+                                        rho_vel_rotate[0], rho_vel_rotate[1],
+                                        self.q[I][3]
+                                    ])
+                    uvt = self.q_to_primitive_u_t(q_bc)
+                    self.v_surf[I + offset_surf_range, dir] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_surf[I + offset_surf_range, dir] = uvt[2]
+            elif stage == 22: ### uvt gradient on surf
+                if ti.static(self.is_viscous):
+                    # TODO: precise relations
+                    self.gradient_v_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_temp_c[I]
+
 
     @ti.kernel
     def bc_wall_slip(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -560,6 +597,25 @@ class BlockSolver:
                                     self.q[I][3] - 0.5 * (rho_vn**2) / rho,
                                 ])
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
+            elif stage == 21: ### uvt on surf
+                if ti.static(self.is_viscous):
+                    rho = self.q[I][0]
+                    rho_vel = ti.Vector([self.q[I][1], self.q[I][2]])
+                    rho_vn = rho_vel.dot(surf_between_dir)
+                    rho_vel_slip = rho_vel - rho_vn * surf_between_dir
+                    q_bc = ti.Vector([
+                                        rho,
+                                        rho_vel_slip[0], rho_vel_slip[1],
+                                        self.q[I][3] - 0.5 * (rho_vn**2) / rho,
+                                    ])
+                    uvt = self.q_to_primitive_u_t(q_bc)
+                    self.v_surf[I + offset_surf_range, dir] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_surf[I + offset_surf_range, dir] = uvt[2]
+            elif stage == 22: ### uvt gradient on surf
+                if ti.static(self.is_viscous):
+                    # TODO: precise relations
+                    self.gradient_v_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_temp_c[I]
 
     @ti.kernel
     def bc_wall_noslip(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -574,6 +630,7 @@ class BlockSolver:
             surf_between_normal = self.vec_surf[I + offset_surf_range, dir]
             if ti.static(end == 0):
                 surf_between_normal *= -1.0
+            surf_between_dir = surf_between_normal.normalized()
 
             if stage == -1:
                 self.elem_area[bc_I] = self.elem_area[I]
@@ -607,6 +664,23 @@ class BlockSolver:
                                     self.q[I][3] - 0.5 * rho_vel.norm_sqr() / rho,
                                 ])
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
+            elif stage == 21: ### uvt on surf
+                if ti.static(self.is_viscous):
+                    rho = self.q[I][0]
+                    rho_vel = ti.Vector([self.q[I][1], self.q[I][2]])
+                    q_bc = ti.Vector([
+                                        rho,
+                                        0.0, 0.0,
+                                        self.q[I][3] - 0.5 * rho_vel.norm_sqr() / rho,
+                                    ])
+                    uvt = self.q_to_primitive_u_t(q_bc)
+                    self.v_surf[I + offset_surf_range, dir] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_surf[I + offset_surf_range, dir] = uvt[2]
+            elif stage == 22: ### uvt gradient on surf
+                if ti.static(self.is_viscous):
+                    # TODO: precise relations
+                    self.gradient_v_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_temp_c[I]
 
     @ti.kernel
     def bc_outlet_super(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -644,6 +718,54 @@ class BlockSolver:
                 # q_bc = ti.max(0.0, 2 * self.q[I] - self.q[int_I])
                 q_bc = self.q[I]
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
+            elif stage == 21: ### uvt on surf
+                if ti.static(self.is_viscous):
+                    q_bc = self.q[I]
+                    uvt = self.q_to_primitive_u_t(q_bc)
+                    self.v_surf[I + offset_surf_range, dir] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_surf[I + offset_surf_range, dir] = uvt[2]
+            elif stage == 22: ### uvt gradient on surf
+                if ti.static(self.is_viscous):
+                    # TODO: precise relations
+                    self.gradient_v_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_temp_c[I]
+
+    ### calculate subsonic bc value from far-field value and internal value
+    @ti.func
+    def bc_inlet_subsonic_mixq(self, q0: ti.template(), qi: ti.template(), vec_surf: ti.template()) -> ti.template():
+        prim0 = self.q_to_primitive_ruvpah(q0)
+        primi = self.q_to_primitive_ruvpah(qi)
+
+        v0 = ti.Vector([prim0[1], prim0[2]])
+        vi = ti.Vector([primi[1], primi[2]])
+
+        in_dir = 1.0 * vec_surf.normalized()
+        in_dir_t = ti.Vector([-1.0 * in_dir[1], in_dir[0]])
+
+        vn0 = v0.dot(in_dir)
+        vni = vi.dot(in_dir)
+
+        R1 = vn0 - ti.static(2.0 / (self.gamma - 1.0)) * prim0[4]
+        R2 = vni + ti.static(2.0 / (self.gamma - 1.0)) * primi[4]
+
+        vn = 0.5 * (R1 + R2)
+        vt = vi.dot(in_dir_t)
+        v = vn * in_dir + vt * in_dir_t
+
+        S = prim0[3] / (prim0[0]**ti.static(self.gamma)) # S = p / rho ** 1.4
+
+        a = (R2 - R1) * ti.static((self.gamma - 1.0) / 4.0)
+        rho = (a**2 / ti.static(self.gamma) / S)**(ti.static(1.0 / (self.gamma - 1.0)))
+        p = rho * (a**2) / ti.static(self.gamma)
+
+        ## return prim and q
+        return ti.Vector([
+                    rho,
+                    rho * v[0],
+                    rho * v[1],
+                    # p_on_rho = e * (self.gamma - 1.0)
+                    p / ti.static(self.gamma - 1.0) + 0.5 * rho * v.norm_sqr()
+                ])
 
     @ti.kernel
     def bc_inlet_subsonic(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -665,16 +787,36 @@ class BlockSolver:
                 self.elem_area[bc_I] = self.elem_area[I]
                 self.elem_width[bc_I] = self.elem_width[I]
             elif stage == 0:
-                self.q[bc_I] = ti.Vector([q0, q1, q2, q3])
+                # self.q[bc_I] = ti.Vector([q0, q1, q2, q3])
+                qinf = ti.Vector([q0, q1, q2, q3])
+                qi = self.q[I] ### TODO: use interpolation
+                q_bc = self.bc_inlet_subsonic_mixq(qinf, qi, surf_between_normal)
+                self.q[bc_I] = q_bc
             elif stage == 1:
                 if ti.static(self.is_viscous):
                     self.gradient_v_c[bc_I] = 1.0 * self.gradient_v_c[I]
                     self.gradient_temp_c[bc_I] = 1.0 * self.gradient_temp_c[I]
             elif stage == 10:
                 ### surf flux
-                q_bc = ti.Vector([q0, q1, q2, q3])
+                # q_bc = ti.Vector([q0, q1, q2, q3])
+                qinf = ti.Vector([q0, q1, q2, q3])
+                qi = self.q[I] ### TODO: use interpolation
+                q_bc = self.bc_inlet_subsonic_mixq(qinf, qi, surf_between_normal)
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
-
+            elif stage == 21: ### uvt on surf
+                if ti.static(self.is_viscous):
+                    # q_bc = ti.Vector([q0, q1, q2, q3])
+                    qinf = ti.Vector([q0, q1, q2, q3])
+                    qi = self.q[I] ### TODO: use interpolation
+                    q_bc = self.bc_inlet_subsonic_mixq(qinf, qi, surf_between_normal)
+                    uvt = self.q_to_primitive_u_t(q_bc)
+                    self.v_surf[I + offset_surf_range, dir] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_surf[I + offset_surf_range, dir] = uvt[2]
+            elif stage == 22: ### uvt gradient on surf
+                if ti.static(self.is_viscous):
+                    # TODO: precise relations
+                    self.gradient_v_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_temp_c[I]
 
     @ti.kernel
     def bc_outlet_subsonic(self, rng_x: ti.template(), rng_y: ti.template(),
@@ -717,6 +859,22 @@ class BlockSolver:
                 v_bc = v_in.dot(v_ext_dir) * v_ext_dir # TODO: when negative value?
                 q_bc = ti.Vector([q0, q0 * v_bc[0], q0 * v_bc[1], q3 + 0.5 * q0 * (v_bc.norm_sqr() - v_ext.norm_sqr())])
                 self.flux[I] += self.q_to_convect_flux(q_bc, surf_between_normal)
+            elif stage == 21: ### uvt on surf
+                if ti.static(self.is_viscous):
+                    v_in = ti.Vector([self.q[I][1], self.q[I][2]]) / self.q[I][0]
+                    v_ext = ti.Vector([q2, q3]) / q1
+                    v_ext_dir = v_ext.normalized()
+                    v_bc = v_in.dot(v_ext_dir) * v_ext_dir # TODO: when negative value?
+                    q_bc = ti.Vector([q0, q0 * v_bc[0], q0 * v_bc[1], q3 + 0.5 * q0 * (v_bc.norm_sqr() - v_ext.norm_sqr())])
+                    uvt = self.q_to_primitive_u_t(q_bc)
+                    self.v_surf[I + offset_surf_range, dir] = ti.Vector([uvt[0], uvt[1]])
+                    self.temp_surf[I + offset_surf_range, dir] = uvt[2]
+            elif stage == 22: ### uvt gradient on surf
+                if ti.static(self.is_viscous):
+                    # TODO: precise relations
+                    self.gradient_v_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_v_c[I]
+                    self.gradient_temp_surf[I + offset_surf_range, dir] = 1.0 * self.gradient_temp_c[I]
+
 
     ###############
     ## Calls all bondary conditions from here
@@ -724,9 +882,14 @@ class BlockSolver:
     ## bc (set quantity on virtual voxels)
     ##
     ## stage: before and in loop, there're several points to set bc values
+    ## TODO: some may not be needed
     ##   -1: geom patch (area, elem_width)
     ##    0: q on center
+    ##   10: convect flux on surf
+    ##   20: uvt on center
+    ##   21: uvt on surf
     ##    1: gradient uvt on center
+    ##   22: uvt gradient on surf
     def bc(self, stage):
         # local bc
         for bc in self.bc_info:
@@ -1388,7 +1551,7 @@ class BlockSolver:
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
             I_surf_left = I + ti.Vector([-1, 0])
             I_surf_right = I + ti.Vector([0, 0])
-            I_surf_down = I + ti.Vector([-1, 0])
+            I_surf_down = I + ti.Vector([0, -1])
             I_surf_up = I + ti.Vector([0, 0])
 
             w_graident_c[I].fill(0.0)
@@ -1416,7 +1579,7 @@ class BlockSolver:
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
             I_surf_left = I + ti.Vector([-1, 0])
             I_surf_right = I + ti.Vector([0, 0])
-            I_surf_down = I + ti.Vector([-1, 0])
+            I_surf_down = I + ti.Vector([0, -1])
             I_surf_up = I + ti.Vector([0, 0])
 
             w_graident_c[I].fill(0.0)
@@ -1481,7 +1644,7 @@ class BlockSolver:
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
             I_surf_left = I + ti.Vector([-1, 0])
             I_surf_right = I + ti.Vector([0, 0])
-            I_surf_down = I + ti.Vector([-1, 0])
+            I_surf_down = I + ti.Vector([0, -1])
             I_surf_up = I + ti.Vector([0, 0])
 
             flux = ti.Vector([0.0, 0.0, 0.0, 0.0])
@@ -1496,19 +1659,18 @@ class BlockSolver:
                 self.gradient_temp_surf[I_surf_left,
                                         0], self.vec_surf[I_surf_left, 0])
             flux += self.calc_flux_diffusion_surf(
-                self.v_surf[I_surf_up, 0], self.temp_surf[I_surf_up, 0],
-                self.gradient_v_surf[I_surf_up, 0],
-                self.gradient_temp_surf[I_surf_up, 0], self.vec_surf[I_surf_up,
-                                                                     0])
+                self.v_surf[I_surf_up, 1], self.temp_surf[I_surf_up, 1],
+                self.gradient_v_surf[I_surf_up, 1],
+                self.gradient_temp_surf[I_surf_up, 1], self.vec_surf[I_surf_up, 1])
             flux -= self.calc_flux_diffusion_surf(
-                self.v_surf[I_surf_down, 0], self.temp_surf[I_surf_down, 0],
-                self.gradient_v_surf[I_surf_down, 0],
+                self.v_surf[I_surf_down, 1], self.temp_surf[I_surf_down, 1],
+                self.gradient_v_surf[I_surf_down, 1],
                 self.gradient_temp_surf[I_surf_down,
-                                        0], self.vec_surf[I_surf_down, 0])
+                                        1], self.vec_surf[I_surf_down, 1])
 
             flux /= self.re0
 
-            self.flux[I] += flux
+            self.flux[I] -= flux
 
     ######
     ## flux for ns diffusion term (laminar flow)
@@ -1529,21 +1691,18 @@ class BlockSolver:
     #     self.calc_flux_diffusion()
 
 
-    def flux_diffusion_init(self):
-        self.calc_u_temp_center()
-
+    def flux_diffusion_interp_qsurf(self):
         self.interpolate_u_surf()
         self.interpolate_temp_surf()
 
+    def flux_diffusion_integrate_gradient_center(self):
         self.integrate_calc_gradient_u_center()
         self.integrate_calc_gradient_temp_center()
 
 
-    def flux_diffusion_calc(self):
+    def flux_diffusion_calc_gradient_surf(self):
         self.interpolate_gradient_u_surf()
         self.interpolate_gradient_temp_surf()
-
-        self.calc_flux_diffusion()
 
 
 
@@ -1608,15 +1767,21 @@ class BlockSolver:
             self.clear_flux()
 
             if self.is_viscous:
-                # self.flux_diffusion()
-                self.flux_diffusion_init()
-                self.bc(1)
-                self.flux_diffusion_calc()
+                self.calc_u_temp_center()
+                # self.bc(20)
+                self.flux_diffusion_interp_qsurf()
+                self.bc(21) # set q on surf
+                self.flux_diffusion_integrate_gradient_center()
+                self.bc(1) # set gradient on virtual center
+                self.flux_diffusion_calc_gradient_surf()
+                self.bc(22) # set gradient on surf
+                self.calc_flux_diffusion()
+                # TODO: be connections bc 1/20/21/22 in multiblock
 
             self.flux_advect() # bc flux is not calculated
 
-            # self.bc(10) # fixed bc advect fluxes
-            self.bc_fake(10)
+            self.bc(10) # fixed bc advect fluxes
+            # self.bc_fake(10)
 
             ## TODO: calculate bc connection advect fluxes, in multiblock's step
 
@@ -1660,7 +1825,7 @@ class BlockSolver:
         elif stage == 1:
             coef = 0.4
 
-        dt_sub = 0.1 * self.dt
+        dt_sub = 0.2 * self.dt
         cdt_sub = 1.0 / (1.0 + 3.0 / 2.0 / self.dt * coef * dt_sub)
 
         for I in ti.grouped(ti.ndrange(*self.range_elems)):

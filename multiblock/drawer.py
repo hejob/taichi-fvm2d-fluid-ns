@@ -70,7 +70,10 @@ class Drawer:
 
         self.output_line_label = ('Rho', 'u', 'v', 'et', 'unorm', 'p', 'a', 'Ma')[self.output_line_var]
 
-        ## output
+        ## monitor points to console
+        self.output_monitor_points = []
+
+        ## output gif for animation
         self.display_gif_files = display_gif_files
 
         ## taichi vars
@@ -124,6 +127,7 @@ class Drawer:
                             display_show_velocity_skip=(4, 4),
                             display_show_surface=False,
                             display_show_surface_norm=False,
+                            output_monitor_points=[],
                             display_gif_files=False):
         self.display_color_map = display_color_map
         self.display_show_grid = display_show_grid
@@ -132,6 +136,7 @@ class Drawer:
         self.display_show_velocity_skip = display_show_velocity_skip
         self.display_show_surface = display_show_surface
         self.display_show_surface_norm = display_show_surface_norm
+        self.output_monitor_points = output_monitor_points
         self.display_gif_files = display_gif_files
 
     ########################
@@ -451,7 +456,52 @@ class Drawer:
                     v = solver.q[i, j][2] / solver.q[i, j][0]
                     xc = (solver.xc[i, j][0], solver.xc[i, j][1])
                     self.display_draw_arrow(xc, (u, v), 0.05)
-    
+
+    @ti.pyfunc
+    def util_vector_to_plain_array(self, v: ti.template()) -> ti.template():
+        ### used .mat of Proxy object, PROBLEM?
+        return list([v[i] for i in ti.static(range(v.mat.n))])
+
+    def util_matrix_to_plain_array(self, v: ti.template()) -> ti.template():
+        ### used .mat of Proxy object, PROBLEM?
+        return list([[v[n, m] for m in ti.static(range(v.mat.m))] for n in ti.static(range(v.mat.n))])
+
+    ### point: (block, i, j)
+    def print_output_monitor_point(self, point):
+        block, i, j = point
+        solver = self.solvers[block]
+
+        print("===========================")
+        print("Monitor point:", (i, j))
+
+        print(" GEOM ",
+            self.util_vector_to_plain_array(solver.xc[i, j]),
+            solver.elem_area[i, j],
+            self.util_vector_to_plain_array(solver.elem_width[i, j]),
+        )
+
+        print(" Q ", self.util_vector_to_plain_array(solver.q[i, j]))
+        print(" flux ", self.util_vector_to_plain_array(solver.flux[i, j]))
+        if solver.is_viscous:
+            print(" v_c ", self.util_vector_to_plain_array(solver.v_c[i, j]))
+            print(" temp_c ", solver.temp_c[i, j])
+            print(" gradient_v_c ", self.util_matrix_to_plain_array(solver.gradient_v_c[i, j]))
+            print(" gradient_temp_c ", self.util_vector_to_plain_array(solver.gradient_temp_c[i, j]))
+
+        if solver.is_viscous:
+            surfs = [
+                ('LEFT', i - 1, j, 0),
+                ('RIGHT', i, j, 0),
+                ('DOWN', i, j - 1, 0),
+                ('UP', i, j, 1),
+            ]
+            for tag, si, sj, sdir in surfs:
+                print(" ", tag)
+                print("    normal", self.util_vector_to_plain_array(solver.vec_surf[si, sj, sdir]))
+                print("    v_surf", self.util_vector_to_plain_array(solver.v_surf[si, sj, sdir]))
+                print("    temp_surf", solver.temp_surf[si, sj, sdir])
+                print("    gradient_v_surf", self.util_matrix_to_plain_array(solver.gradient_v_surf[si, sj, sdir]))
+                print("    gradient_temp_surf", self.util_vector_to_plain_array(solver.gradient_temp_surf[si, sj, sdir]))
 
     def init_display(self):
         # ## init for field display
@@ -491,6 +541,10 @@ class Drawer:
             self.display_v()
         if self.display_show_surface:
             self.display_surf_norm(self.display_show_surface_norm)
+
+        ## output quantities on monitor points to console
+        for point in self.output_monitor_points:
+            self.print_output_monitor_point(point)
 
         ## output gif
         if self.display_gif_files:
