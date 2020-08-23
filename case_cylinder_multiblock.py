@@ -2,9 +2,9 @@ import taichi as ti
 import numpy as np
 import time
 
-from multiblock.multiblock_solver import MultiBlockSolver
-from multiblock.block_solver import BlockSolver
-from multiblock.drawer import Drawer
+from multiblocksolver.multiblock_solver import MultiBlockSolver
+from multiblocksolver.block_solver import BlockSolver
+from multiblocksolver.drawer import Drawer
 
 
 real = ti.f32
