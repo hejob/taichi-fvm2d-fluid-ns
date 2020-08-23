@@ -492,7 +492,7 @@ class Drawer:
             surfs = [
                 ('LEFT', i - 1, j, 0),
                 ('RIGHT', i, j, 0),
-                ('DOWN', i, j - 1, 0),
+                ('DOWN', i, j - 1, 1),
                 ('UP', i, j, 1),
             ]
             for tag, si, sj, sdir in surfs:

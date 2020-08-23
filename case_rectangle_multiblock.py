@@ -106,7 +106,8 @@ if __name__ == '__main__':
             display_show_velocity_skip=(8, 1),
             display_show_surface=False,
             display_show_surface_norm=False,
-            output_monitor_points=[(0, 0, nj // 2), (0, 1, nj // 2), (0, 2, nj // 2)]
+            # output_monitor_points=[(0, 0, nj // 2), (0, 1, nj // 2), (0, 2, nj // 2)]   ## for debug on inlet
+            output_monitor_points=[(0, ni // 2, 0), (0, ni // 2, 1), (0, ni // 2, 2), (0, ni // 2, 3), (0, ni // 2, 4), (0, ni // 2, 5), (0, ni // 2, 6)]  ## for debug on odd-even oscillation phenomena
         )
 
     ### start simulation loop
