@@ -22,7 +22,7 @@ Current Features:
 - `2D structured mesh`
 - Compressible fluid simulation with shockwave catching capabilities and heat transfer
 - Euler and Navier-Stokes equations (`WIP, laminar diffusion coefficients, validation still needed with test cases`)
-- Convection items suitable for shockwave catching using Godnuv type Riemann solvers: **van Leer / modified Roe / Roe-RHLL methods[1]** (`Validation still needed`)
+- Convection items suitable for shockwave catching using Godnuv type Riemann solvers: **van Leer / modified Roe / Roe-RHLL methods[1]**
 - Physical quantities on the cell surface and gradients are calculated by interpolation/cell-integration with adjacent cells (`Currently simple 1st to quasi-2nd order`)
 - RK3 time marching
 - Dual time marching[2] with RK3 (`WIP, convergence problems exist and validations are needed`)
@@ -36,13 +36,22 @@ Current Features:
 
 Separation of simulation logic, variable allocations and gui works into main MultiblockSolver, BlockSolver and Drawer classes.
 
-The input configurations can be written case by case in script files, examples are shown in `Test cases` section and `case_*_multiblock.py` files.
+The input configurations are written case by case in script files, examples are shown in `Test cases` section and `case_*.py` files.
 
 *TODO: more descriptions*
 
-_NOTICE: Solver folder and non-multiblock cases are inititial versions. These are now deprecated in favor of multi block versions. They will be removed soon._
-
 ## Test cases
+
+### SOD shockwave tube
+
+The shockwave tube is an usual validation case of shock-wave capturing method for stability and dissipation level. The configurations are taken from [4]. The iniital rest properties on the left/right are 1.0/0.125 (density), 1e5/1e4 Pa (pressure) and 348.4K/278.7K (temperature), respectively. Results at about 7ms of time are presented for comparision.
+
+<div align="center">
+    <img height="300px" src="./docs/sod.png" />
+    <img height="300px" src="./docs/sod_source.png" />
+</div>
+
+Density curves shows good stability but some level of numerical dissipation. `Further comparisons can be made after methods with higher-order precisions along with improved bc handling or interpolation methods are added`
 
 ### supersonic wedge
 
@@ -57,7 +66,7 @@ The result shows straight line shaped shock front and appropriate turning angle.
 
 ### blunt shock wave around cylinder
 
-The case is also from [3] for validation on blunt type shock waves. Mach number 3.0 is used instead.
+The case is also from [3] for validation on blunt type shock waves. Mach number is 2.5, but different Mach number is used in gif animation simulation (`updates needed`).
 
 The case also utilizes circular shaped grid mesh in favor of FVM method, a cutting boundary between surfaces in i0 and iend direction of the single block to provide validation coverage on interconnected data transfer.
 
@@ -66,7 +75,7 @@ The case also utilizes circular shaped grid mesh in favor of FVM method, a cutti
     <img height="300px" src="./docs/cylinder.png" />
 </div>
 
-The shock wave simulated with Roe-RHLL method is showing appropriate shock wave shape and carbuncle-free features. `More quantitative analysis is needed.`
+The shock wave simulated with Roe-RHLL method is showing appropriate shock wave shape and carbuncle-free features. `Surface Cp curve comparisions can be added.`
 
 ### forward-facing step
 
@@ -84,7 +93,7 @@ The case is used as validations for shockwave interactions(reflections against w
     <img height="180px" src="./docs/forwardstep_ma.png" />
 </div>
 
-The result shows appropriate shock shapes using van Leer method. `More validations are needed as both Roe-RHLL and dual-time marching is caught in convergence problems. And further precise time-related qunatitative analysis is needed`
+The result shows appropriate shock shapes using van Leer method. `More validations are needed as dual-time marching is caught in convergence problems. And further precise time-related qunatitative analysis is needed`
 
 ## Future work
 
@@ -102,5 +111,6 @@ The result shows appropriate shock shapes using van Leer method. `More validatio
 
 [[2] Jameson, Antony. (1991). Time dependent calculations using multigrid, with applications to unsteady flows past airfoils and wings. 10.13140/2.1.2459.3608.](https://www.researchgate.net/publication/267982395_Time_dependent_calculations_using_multigrid_with_applications_to_unsteady_flows_past_airfoils_and_wings)
 
-[[3] Celik, Bayram & Turk, Adem. (2017). A 2-D Finite Volume Navier-Stokes Solver for Supersonic Flows. Anadolu University Journal of Science and Technology A- Applied Sciences and Engineering. 18. 10.18038/aubtda.298656. ](https://www.researchgate.net/publication/320076700_A_2-D_Finite_Volume_Navier-Stokes_Solver_for_Supersonic_Flows)
+[[3] Celik, Bayram & Turk, Adem. (2017). A 2-D Finite Volume Navier-Stokes Solver for Supersonic Flows. Anadolu University Journal of Science and Technology A- Applied Sciences and Engineering. 18. 10.18038/aubtda.298656.](https://www.researchgate.net/publication/320076700_A_2-D_Finite_Volume_Navier-Stokes_Solver_for_Supersonic_Flows)
 
+[[4] Greenshields, Christopher & Weller, Henry & Gasparini, Luca & Reese, Jason. (2009). Implementation of semi‐discrete, non‐staggered central schemes in a colocated, polyhedral, finite volume framework, for high‐speed viscous flows. International Journal for Numerical Methods in Fluids. 63. 1 - 21. 10.1002/fld.2069.](https://www.researchgate.net/publication/227657948_Implementation_of_semi-discrete_non-staggered_central_schemes_in_a_colocated_polyhedral_finite_volume_framework_for_high-speed_viscous_flows)

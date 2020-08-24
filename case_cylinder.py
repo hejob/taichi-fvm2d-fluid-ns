@@ -11,7 +11,7 @@ real = ti.f32
 
 ### initialize solver with simulation settings
 gamma = 1.4
-ma0 = 2.5
+ma0 = 2.9
 # re0 = 1.225 * (ma0 * 343) * 1.0 / (1.81e-5)
 re0 = 7.2e5
 p0 = 1.0 / gamma / ma0 / ma0
@@ -73,7 +73,7 @@ solver = MultiBlockSolver(
     n_blocks=1,
     block_dimensions=[(ni, nj)],
     ma0=ma0,
-    dt=1e-3,
+    dt=5e-4,
     convect_method=2,
     is_viscous=False,
     temp0_raw=273,
@@ -124,7 +124,7 @@ solver.set_bc_connection(bc_connection_array)
 
 solver.set_display_options(
         display_color_map=1,
-        display_steps=10,
+        display_steps=20,
         display_show_grid=False,
         display_show_xc=False,
         display_show_velocity=False,

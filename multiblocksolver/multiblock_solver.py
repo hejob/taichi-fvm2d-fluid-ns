@@ -18,7 +18,7 @@ ti.init(arch=ti.cpu, default_fp=real, kernel_profiler=True)
 class MultiBlockSolver:
 
     ################
-    # constructor: get block solver and drawer classes
+    # constructor: block solver and drawer classes are assigned by user (allow to write custom solver and drawer classes)
     def __init__(
             self,
             BlockSolver,
