@@ -281,7 +281,13 @@ class MultiBlockSolver:
 
             if ti.static(stage == -1):
                 solver.elem_area[I_bc] = solver_other.elem_area[I_other]
-                solver.elem_width[I_bc] = solver_other.elem_width[I_other]
+                ## elem width's 2 direction is i/j direction, not physical direction
+                # solver.elem_width[I_bc] = solver_other.elem_width[I_other]
+                if (bc_conn_info[2] == bc_other_info[2]):
+                    solver.elem_width[I_bc] = solver_other.elem_width[I_other]
+                else:
+                    solver.elem_width[I_bc][0] = solver_other.elem_width[I_other][1]
+                    solver.elem_width[I_bc][1] = solver_other.elem_width[I_other][0]
             elif ti.static(stage == 0):
                 solver.q[I_bc] = solver_other.q[I_other]
             elif ti.static(stage == 1):
@@ -378,14 +384,17 @@ class MultiBlockSolver:
                 solver.time_march_rk3(i)
 
 
-    def step_dual(self):
-        # RK-3
+    def step_dual(self, step_index):
+        ### RK-3
         for solver in self.solvers:
             solver.time_save_q_dual()
 
-        for _ in range(1):
+        ## dual time, inner time step
+        for _ in range(3):
             for solver in self.solvers:
                 solver.time_save_q_dual_sub()
+
+            ## RK-3
             for i in range(3):
                 # calc from new q
                 for solver in self.solvers:
@@ -394,16 +403,31 @@ class MultiBlockSolver:
 
                 for solver in self.solvers:
                     solver.clear_flux()
-                    if self.is_viscous:
-                        # self.flux_diffusion()
-                        solver.flux_diffusion_init()
-                        solver.bc(1)
-
-                self.bc_interblock(1)
 
                 if self.is_viscous:
                     for solver in self.solvers:
-                        solver.flux_diffusion_calc()
+                        # self.flux_diffusion()
+                        solver.calc_u_temp_center()
+                        # solver.bc(20)
+                    self.bc_interblock(20)
+
+                    for solver in self.solvers:
+                        solver.flux_diffusion_interp_qsurf()
+                        solver.bc(21) # set q on surf
+                    self.bc_interblock(21)
+
+                    for solver in self.solvers:
+                        solver.flux_diffusion_integrate_gradient_center()
+                        solver.bc(1) # set gradient on virtual center
+                    self.bc_interblock(1)
+
+                    for solver in self.solvers:
+                        solver.flux_diffusion_calc_gradient_surf()
+                        solver.bc(22) # set gradient on surf
+                    self.bc_interblock(22)
+
+                    for solver in self.solvers:
+                        solver.calc_flux_diffusion()
 
                 for solver in self.solvers:
                     solver.flux_advect()
@@ -411,36 +435,51 @@ class MultiBlockSolver:
                 self.bc_interblock(10)
 
                 for solver in self.solvers:
-                    solver.time_march_rk3_dual(i)
+                    solver.time_march_rk3_dual(i, step_index)
 
-        ## update main
-        for solver in self.solvers:
-            solver.time_save_q_dual_sub()
-        # calc from new q
-        for solver in self.solvers:
-            solver.bc(0)
-        self.bc_interblock(0)
+        # ## update main
+        # for solver in self.solvers:
+        #     solver.time_save_q_dual_sub()
+        # # calc from new q
+        # for solver in self.solvers:
+        #     solver.bc(0)
+        # self.bc_interblock(0)
 
-        for solver in self.solvers:
-            solver.clear_flux()
-            if self.is_viscous:
-                # self.flux_diffusion()
-                solver.flux_diffusion_init()
-                solver.bc(1)
+        # for solver in self.solvers:
+        #     solver.clear_flux()
 
-        self.bc_interblock(1)
+        # if self.is_viscous:
+        #     for solver in self.solvers:
+        #         # self.flux_diffusion()
+        #         solver.calc_u_temp_center()
+        #         # solver.bc(20)
+        #     self.bc_interblock(20)
 
-        if self.is_viscous:
-            for solver in self.solvers:
-                solver.flux_diffusion_calc()
+        #     for solver in self.solvers:
+        #         solver.flux_diffusion_interp_qsurf()
+        #         solver.bc(21) # set q on surf
+        #     self.bc_interblock(21)
 
-        for solver in self.solvers:
-            solver.flux_advect()
-            solver.bc(10)   # advect flux on bc
-        self.bc_interblock(10)
+        #     for solver in self.solvers:
+        #         solver.flux_diffusion_integrate_gradient_center()
+        #         solver.bc(1) # set gradient on virtual center
+        #     self.bc_interblock(1)
 
-        for solver in self.solvers:
-            solver.time_march_rk3_dual_last()        
+        #     for solver in self.solvers:
+        #         solver.flux_diffusion_calc_gradient_surf()
+        #         solver.bc(22) # set gradient on surf
+        #     self.bc_interblock(22)
+
+        #     for solver in self.solvers:
+        #         solver.calc_flux_diffusion()
+
+        # for solver in self.solvers:
+        #     solver.flux_advect()
+        #     solver.bc(10)   # advect flux on bc
+        # self.bc_interblock(10)
+
+        # for solver in self.solvers:
+        #     solver.time_march_rk3_dual_last()        
 
 
     #--------------------------------------------------------------------------
@@ -486,7 +525,7 @@ class MultiBlockSolver:
             ## simulation step
             for step in range(self.display_steps):
                 if self.is_dual_time:
-                    self.step_dual()
+                    self.step_dual(step_index)
                 else:
                     self.step()
                 # for block in range(self.n_blocks):

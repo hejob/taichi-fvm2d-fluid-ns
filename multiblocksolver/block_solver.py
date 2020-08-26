@@ -1801,8 +1801,7 @@ class BlockSolver:
     ### in multi-block solver, bc and interconnection bc calls are inserted between loops
     ### step() is rearranged in multi-block class
     ### TODO: better methods?
-
-
+ 
     @ti.kernel
     def time_save_q_dual(self):
         # save q to w, w0
@@ -1812,12 +1811,12 @@ class BlockSolver:
 
     @ti.kernel
     def time_save_q_dual_sub(self):
-        # save q to w, w0
+        # save q to wsub
         for i, j in self.q:
             self.wsub[i, j] = self.q[i, j]
 
     @ti.kernel
-    def time_march_rk3_dual(self, stage: ti.i32):
+    def time_march_rk3_dual(self, stage: ti.i32, step_index: ti.i32):
         coef = 1.0
 
         if stage == 0:
@@ -1825,14 +1824,22 @@ class BlockSolver:
         elif stage == 1:
             coef = 0.4
 
-        dt_sub = 0.2 * self.dt
+        dt_sub = 2 * self.dt
+        if step_index < 100:
+            dt_sub = 0.2 * self.dt
+
         cdt_sub = 1.0 / (1.0 + 3.0 / 2.0 / self.dt * coef * dt_sub)
 
         for I in ti.grouped(ti.ndrange(*self.range_elems)):
-            dq = 1.0 / self.dt * self.elem_area[I] * 3.0 / 2.0 * self.w[I]
-            # dq = 1.0 / self.dt * self.elem_area[I] * (2.0 * self.w[I] - 0.5 * self.w0[I])
-            self.flux[I] *= coef * dt_sub / self.elem_area[I] * cdt_sub
-            self.q[I] = (1.0 + 3.0 / 2.0 / self.dt * self.elem_area[I]) * self.wsub[I] - self.flux[I] - dq
+            # dq = 1.0 / self.dt * self.elem_area[I] * 3.0 / 2.0 * self.w[I]
+            dq = 1.0 / self.dt * self.elem_area[I] * (2.0 * self.w[I] - 0.5 * self.w0[I])
+
+            # self.flux[I] *= coef * dt_sub / self.elem_area[I] * cdt_sub
+            # self.q[I] = (1.0 + 3.0 / 2.0 / self.dt * self.elem_area[I]) * self.wsub[I] - self.flux[I] - dq
+            self.flux[I] -= dq
+            self.flux[I] *= coef * dt_sub / self.elem_area[I]
+
+            self.q[I] = cdt_sub * (self.wsub[I] - self.flux[I])
 
     @ti.kernel
     def time_march_rk3_dual_last(self):

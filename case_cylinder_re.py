@@ -112,15 +112,16 @@ solver = MultiBlockSolver(
     n_blocks=5,
     block_dimensions=[(ni, nj), (ni, nj), (ni, nj), (ni, nj), (ni_after, nj_after)],
     ma0=ma0,
-    dt=1e-4,
-    convect_method=2,
+    dt=1e-3,
+    is_dual_time=False,
+    convect_method=1,
     is_viscous=True,
     temp0_raw=273,
     re0=re0,
     gui_size=(800, 400),
     display_field=True,
-    display_value_min=-0.1,
-    display_value_max=1.0,
+    display_value_min=-0.5,
+    display_value_max=0.5,
     output_line=False,
     output_line_ends=((1.1 + radius * 2.0, height / 2.0), (1.9 + radius * 2.0, height / 2.0)),
     output_line_num_points=5,
@@ -177,13 +178,13 @@ bc_array = [
 
     [
         # RIGHT AFTER REGION
-        # (2, 1, nj_after + 1, 0, 0, None),     # conn to 3
-        (1, 1, nj_after + 1, 1, 1, 0),  # right far-field, conn or outlet
+        # (10, 1, nj_after + 1, 0, 0, 0),     # conn to 3
+        (1, 1, nj_after + 1, 0, 1, 0),  # right far-field, conn or outlet
         (3, 1, ni_after + 1, 1, 0, None),       # down wall
         (3, 1, ni_after + 1, 1, 1, None),       # up wall
     ]
 ]
-for i in range(4):
+for i in range(5):
     solver.solvers[i].set_bc(bc_array[i], bc_q_values)
 
 bc_connection_array = [
@@ -209,11 +210,11 @@ solver.set_bc_connection(bc_connection_array)
 
 solver.set_display_options(
         display_color_map=1,
-        display_steps=1,
+        display_steps=10,
         display_show_grid=False,
         display_show_xc=False,
         display_show_velocity=False,
-        display_show_velocity_skip=(4,4),
+        display_show_velocity_skip=(4,1),
         display_show_surface=False,
         display_show_surface_norm=False,
         display_gif_files=False
