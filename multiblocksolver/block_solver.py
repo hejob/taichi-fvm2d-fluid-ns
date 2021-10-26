@@ -117,7 +117,7 @@ class BlockSolver:
         self.range_grid = ((0, self.ni + self.n_virtual_voxels),
                            (0, self.nj + self.n_virtual_voxels))
         # nodes, size: (ni + 1) * (nj + 1), index: [0 ~ ni+1), [0 ~ nj+1)
-        self.x = ti.Vector(2, dt=real)
+        self.x = ti.Vector.field(2, dtype=real)
         ti.root.dense(ti.ij, self.size_grid).place(self.x)
 
         #===================== ELEMENTS(cells) ==========================
@@ -134,15 +134,15 @@ class BlockSolver:
         self.size_elems_virtual = (self.ni + 2 * self.n_virtual_voxels,
                                    self.nj + 2 * self.n_virtual_voxels)
         ### center position
-        self.xc = ti.Vector(2, dt=real)
+        self.xc = ti.Vector.field(2, dtype=real)
         ### cell area
         self.elem_area = ti.field(dtype=real)
         ### main quantities to solve
-        self.q = ti.Vector(4, dt=real)  # Q = (rho, rho*u, rho*v, rho*Et)
-        self.flux = ti.Vector(4, dt=real)  # flux density per area * dtime
+        self.q = ti.Vector.field(4, dtype=real)  # Q = (rho, rho*u, rho*v, rho*Et)
+        self.flux = ti.Vector.field(4, dtype=real)  # flux density per area * dtime
         self.elem_nodes = ti.root.dense(ti.ij, self.size_elems_virtual)
         ### time marching cache for RK3
-        self.w = ti.Vector(4, dt=real)
+        self.w = ti.Vector.field(4, dtype=real)
         ### making use of offsets
         ###     we put internal region within index [1~), [1~)
         self.elem_nodes.place(self.xc,
@@ -154,8 +154,8 @@ class BlockSolver:
                                       1 - self.n_virtual_voxels))
         ### dual time
         if self.is_dual_time:
-            self.w0 = ti.Vector(4, dt=real)
-            self.wsub = ti.Vector(4, dt=real)
+            self.w0 = ti.Vector.field(4, dtype=real)
+            self.wsub = ti.Vector.field(4, dtype=real)
             self.elem_nodes.place(self.w0, self.wsub,
                               offset=(1 - self.n_virtual_voxels,
                                       1 - self.n_virtual_voxels))
@@ -192,7 +192,7 @@ class BlockSolver:
         self.range_surfs_ij_j_internal = ((1, self.n_virtual_voxels + self.ni),
                                         (1, self.nj))
         ### Surface normal vectors, with vec norm = length of the surface edge
-        self.vec_surf = ti.Vector(2, dt=real)
+        self.vec_surf = ti.Vector.field(2, dtype=real)
         self.surf_nodes = ti.root.dense(ti.ijk, self.size_surfs)
         ### use offset, we put internal region in
         ###     index [0~), [1~), 0 in i direction
@@ -202,7 +202,7 @@ class BlockSolver:
                                       1 - self.n_virtual_voxels, 0))
         ### geom elem widths in 2 directions
         ### for interpolation coefs (in fact, only diffusion uses this for now)
-        self.elem_width = ti.Vector(2, dt=real)
+        self.elem_width = ti.Vector.field(2, dtype=real)
         self.elem_nodes.place(self.elem_width,
                               offset=(1 - self.n_virtual_voxels,
                                       1 - self.n_virtual_voxels))
@@ -215,29 +215,29 @@ class BlockSolver:
 
             ### primitive variables (only save velocity and T for their gradients in diffusion terms)
             ### TODO: here we can instead calculate on the way to not save center primitive vars to reduce memory?
-            self.v_c = ti.Vector(2, dt=real)  # primitive velocity
+            self.v_c = ti.Vector.field(2, dtype=real)  # primitive velocity
             self.temp_c = ti.field(dtype=real)  # temperature
             self.elem_nodes.place(self.v_c,
                                   self.temp_c,
                                   offset=(1 - self.n_virtual_voxels,
                                           1 - self.n_virtual_voxels))
-            self.v_surf = ti.Vector(2, dt=real)
+            self.v_surf = ti.Vector.field(2, dtype=real)
             self.temp_surf = ti.field(dtype=real)
             self.surf_nodes.place(self.v_surf,
                                   self.temp_surf,
                                   offset=(1 - self.n_virtual_voxels,
                                           1 - self.n_virtual_voxels, 0))
             ### gradients on center
-            self.gradient_v_c = ti.Matrix(2, 2, dt=real)
-            self.gradient_temp_c = ti.Vector(2, dt=real)
+            self.gradient_v_c = ti.Matrix.field(2, 2, dtype=real)
+            self.gradient_temp_c = ti.Vector(2, dtype=real)
             self.elem_nodes.place(self.gradient_v_c,
                                   self.gradient_temp_c,
                                   offset=(1 - self.n_virtual_voxels,
                                           1 - self.n_virtual_voxels))
             ### gradients on surface
             ## TODO: here we can instead calculate on the way to not save center primitive vars to reduce memory
-            self.gradient_v_surf = ti.Matrix(2, 2, dt=real)
-            self.gradient_temp_surf = ti.Vector(2, dt=real)
+            self.gradient_v_surf = ti.Matrix.field(2, 2, dtype=real)
+            self.gradient_temp_surf = ti.Vector(2, dtype=real)
             self.surf_nodes.place(self.gradient_v_surf,
                                   self.gradient_temp_surf,
                                   offset=(1 - self.n_virtual_voxels,

@@ -88,9 +88,9 @@ class Drawer:
         if self.display_field:
             ### TODO: replace 2d array by accumulated array of all block's triangle into 1d array
             # element triangles and fields to display for every block
-            self.display_elems_triangle_a = [ti.Vector(2, dt=real) for _ in range(self.n_blocks)]
-            self.display_elems_triangle_b = [ti.Vector(2, dt=real) for _ in range(self.n_blocks)]
-            self.display_elems_triangle_c = [ti.Vector(2, dt=real) for _ in range(self.n_blocks)]
+            self.display_elems_triangle_a = [ti.Vector.field(2, dtype=real) for _ in range(self.n_blocks)]
+            self.display_elems_triangle_b = [ti.Vector.field(2, dtype=real) for _ in range(self.n_blocks)]
+            self.display_elems_triangle_c = [ti.Vector.field(2, dtype=real) for _ in range(self.n_blocks)]
             self.display_elems_q = [ti.field(dtype=ti.i32) for _ in range(self.n_blocks)]
 
             for block in range(self.n_blocks):
